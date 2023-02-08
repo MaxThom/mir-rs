@@ -14,7 +14,13 @@ use arrow::error::{ArrowError, Result as ArrowResult};
 use arrow::json;
 use arrow::record_batch::*;
 
+use parquet::arrow::arrow_writer::ArrowWriter;
+use parquet::file::properties::WriterProperties;
+
 use clap::Parser;
+
+// Parquet Reader
+// https://parquetreader.com/home
 
 type TypeGenerator = fn(&SchemaArgs, usize) -> ArrayRef;
 
@@ -272,6 +278,7 @@ fn write_to_ouput(batch: RecordBatch, output: String, file_name: String) -> Resu
         "csv" => write_to_csv(batch, file_name),
         "json" => write_to_json(batch, file_name),
         "arrow" => write_to_arrow(batch, file_name),
+        "parquet" => write_to_parquet(batch, file_name),
         _ => Err(format!("{} is not supported.", output)),
     }
 }
@@ -288,7 +295,7 @@ fn write_to_csv(batch: RecordBatch, file_name: String) -> Result<String, String>
     Ok(format!(
         "{} records written to {}.",
         batch.num_rows(),
-        file_name
+        format!("{}.csv", file_name)
     ))
 }
 
@@ -307,7 +314,7 @@ fn write_to_json(batch: RecordBatch, file_name: String) -> Result<String, String
     Ok(format!(
         "{} records written to {}.",
         batch.num_rows(),
-        file_name
+        format!("{}.json", file_name)
     ))
 }
 
@@ -335,7 +342,42 @@ fn write_to_arrow(batch: RecordBatch, file_name: String) -> Result<String, Strin
     Ok(format!(
         "{} records written to {}.",
         batch.num_rows(),
-        file_name
+        format!("{}.arrow", file_name)
+    ))
+}
+
+fn write_to_parquet(batch: RecordBatch, file_name: String) -> Result<String, String> {
+
+    let file = match File::create(format!("{}.parquet", file_name)) {
+        Ok(file) => file,
+        Err(err) => return Err(err.to_string()),
+    };
+
+    let props = WriterProperties::builder()
+    //.set_compression(Compression::SNAPPY)
+    .set_writer_version(parquet::file::properties::WriterVersion::PARQUET_2_0)
+    //.set_encoding(parquet::basic::Encoding::PLAIN_DICTIONARY)
+    .build();
+
+    let mut writer = match ArrowWriter::try_new(file, batch.schema(), Some(props)) {
+        Ok(file) => file,
+        Err(err) => return Err(err.to_string()),
+    };
+   
+    match writer.write(&batch) {
+        Ok(file) => file,
+        Err(err) => return Err(err.to_string()),
+    };
+    
+    match writer.close() {
+        Ok(file) => file,
+        Err(err) => return Err(err.to_string()),
+    };
+
+    Ok(format!(
+        "{} records written to {}.",
+        batch.num_rows(),
+        format!("{}.parquet", file_name)
     ))
 }
 

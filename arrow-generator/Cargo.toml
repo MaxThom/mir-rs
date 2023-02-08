@@ -8,5 +8,6 @@ edition = "2021"
 [dependencies]
 rand = "0.8.5"
 arrow= "32.0.0"
+parquet = "32.0.0"
 clap = { version = "4.1.4", features = ["derive"] }
 chrono = "0.4.2"
