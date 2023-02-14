@@ -22,13 +22,13 @@ build:
 	cargo build
 
 docker-build:
-	docker build --tag maxthom/mir/arrow-generator:latest .
+	docker build --tag maxthom/mir/arrow-generator:latest -f Dockerfile .
 
 docker-run:
 	docker run --rm maxthom/mir/arrow-generator:latest $(RUN_ARGS)
 
 docker-exec:
-	docker run -it --rm maxthom/mir/arrow-generator:latest
+	docker ex -it --rm maxthom/mir/arrow-generator:latest /bin/sh
 
 docker-push:
 	docker push maxthom/mir/arrow-generator:latest
