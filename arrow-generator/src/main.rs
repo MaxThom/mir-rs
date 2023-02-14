@@ -57,7 +57,7 @@ struct SchemaArgs {
 
 fn main() {
     let args = Cli::parse();
-    println!("Hello, csv-generator!");
+    println!("Hello, arrow-generator!");
     println!("---");
     println!("{}", args);
     println!("---");

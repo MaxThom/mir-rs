@@ -1,15 +1,27 @@
-use arrow::error::ArrowError;
+use arrow::error::{ArrowError}; //, Result as ArrowResult
 use arrow::ipc::{reader::FileReader};
 use arrow::record_batch::RecordBatch;
 
+use std::fmt::{Display, Formatter, Result as FmtResult};
 use std::fs::File;
-use std::sync::Arc;
-use arrow::datatypes::Schema;
+use clap::Parser;
+
+#[derive(Parser)]
+#[command(author = "MaxThom", version, about = "A simple arrow reader fly the records to arrow-flux")]
+struct Cli {
+    #[arg(short, long, default_value_t = String::from("../arrow-generator/data/gen.arrow"))]
+    path: String,
+}
+
+impl Display for Cli {
+    fn fmt(&self, f: &mut Formatter) -> FmtResult {
+        write!(f, "File: {}", self.path)
+    }
+}
+
 
 struct ArrowReader {
     file_reader: FileReader<File>,
-    batches: Option<Vec<arrow::record_batch::RecordBatch>>,
-    schema: Option<Arc<Schema>>,
 }
 
 impl ArrowReader {
@@ -22,12 +34,7 @@ impl ArrowReader {
     //    }
     //}
 
-    pub fn try_open_file(file_path: &str) -> Result<Self, ArrowError> {
-        let file = match File::open(file_path) {
-            Ok(file) => file.try_clone().unwrap(),
-            Err(err) => return Err(ArrowError::IoError(err.to_string())),
-        };
-
+    pub fn try_open_file(file: File) -> Result<Self, ArrowError> {
         let file_reader = match FileReader::try_new(file, None) {
             Ok(file) => file,
             Err(err) => return Err(err),
@@ -37,8 +44,6 @@ impl ArrowReader {
 
         Ok(Self {
             file_reader: file_reader,
-            batches: None,
-            schema: None,
         })
     }
 }
@@ -51,17 +56,19 @@ impl Iterator for ArrowReader {
 }
 
 fn main() {
-    println!("Hello, world!");
+    let args = Cli::parse();
+    println!("Hello, arrow-flight!");
+    println!("---");
+    println!("{}", args);
+    println!("---");
 
-    let rdr = match ArrowReader::try_open_file(&"../arrow-generator/data/gen.arrow".to_string())  {
+    let rdr = match read_from_arrow(args.path) {
         Ok(rdr) => rdr,
-        Err(err) => panic!("{:?}", err),
+        Err(err) => {
+            println!("{}", err.to_string());
+            panic!();
+        }
     };
-
-    //let res = match rdr.open_file("../arrow-generator/data/gen.arrow".to_string()) {
-    //    Ok(file) => file,
-    //    Err(err) => panic!("{:?}", err),
-    //};
 
     let mut batches: Vec<arrow::record_batch::RecordBatch> = vec![];
     for i in rdr {
@@ -71,20 +78,20 @@ fn main() {
         };
 
         println!("cols: {:?}, rows: {}", batch.num_columns(), batch.num_rows());
-        println!("{:?}", batch);
         batches.push(batch);
     }
 
-    //let res = match read_from_arrow("../arrow-generator/data/gen.arrow".to_string()) {
-    //    Ok(file) => file,
-    //    Err(err) => panic!("{:?}", err),
-    //};
-
-    //for i in ArrowReader().next() {
-    //    println!("> {}", i);
-    //}
-
 }
+
+fn read_from_arrow(file_path: String) -> Result<ArrowReader, ArrowError> {
+    let file = match File::open(file_path) {
+        Ok(file) => file.try_clone().unwrap(),
+        Err(err) => return Err(ArrowError::IoError(err.to_string())),
+    };
+
+    ArrowReader::try_open_file(file)
+}
+
 
 //fn read_from_arrow(file_path: String) -> Result<Vec<arrow::record_batch::RecordBatch>, String> {
 //    let file = match File::open(file_path) {
