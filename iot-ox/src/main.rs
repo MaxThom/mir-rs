@@ -1,10 +1,12 @@
+use brotli::{Decompressor, CompressorWriter};
 use deadpool_lapin::{Manager, Pool, PoolError};
 use futures::{join, StreamExt};
-use lapin::{options::*, types::FieldTable, BasicProperties, ConnectionProperties, message::Delivery};
-use std::convert::Infallible;
+use lapin::types::ShortString;
+use lapin::{options::*, types::FieldTable, BasicProperties, ConnectionProperties};
+use std::io::Write;
+use std::{convert::Infallible, io::Read};
 use std::result::Result as StdResult;
 use std::time::Duration;
-use std::mem;
 use thiserror::Error as ThisError;
 use tokio_amqp::*;
 use warp::{Filter, Rejection, Reply};
@@ -58,25 +60,35 @@ async fn main() -> Result<()> {
 ///
 
 async fn add_msg_handler(pool: Pool) -> WebResult<impl Reply> {
-    let payload = b"Hello world!";
+    // Create message and compress using Brotli 10
+    let payload = "Hello world!Hello world!Hello world!Hello world!Hello world!Hello world!Hello world!Hello world!Hello world!Hello world!Hello world!Hello world!Hello world!Hello world!Hello world!".as_bytes();
+    let mut compressed_data = Vec::new();
+    {
+        let mut compressor = CompressorWriter::new(&mut compressed_data, 4096, 10, 22);
+        compressor.write_all(payload).unwrap();
+    }
 
+    // Get connection
     let rmq_con = get_rmq_con(pool).await.map_err(|e| {
         eprintln!("can't connect to rmq, {}", e);
         warp::reject::custom(Error::RMQPoolError(e))
     })?;
 
+    // Create channel
     let channel = rmq_con.create_channel().await.map_err(|e| {
         eprintln!("can't create channel, {}", e);
         warp::reject::custom(Error::RMQError(e))
     })?;
 
+    // Set encoding type
+    let headers = BasicProperties::default().with_content_encoding("br".into());
     channel
         .basic_publish(
             "",
             "hello",
             BasicPublishOptions::default(),
-            payload,
-            BasicProperties::default(),
+            &compressed_data,
+            headers,
         )
         .await
         .map_err(|e| {
@@ -139,14 +151,22 @@ async fn init_rmq_listen(pool: Pool) -> Result<()> {
     println!("rmq consumer connected, waiting for messages");
     while let Some(delivery) = consumer.next().await {
         if let Ok(delivery) = delivery {
-            println!("received msg: {:?}", delivery);
-            let pqt_size = mem::size_of_val(&delivery);
-            let pqt_data_size = mem::size_of_val(&delivery.data);
-            let pqt_header_size = pqt_size - pqt_data_size;
-            println!("-> full {}, header {}, payload {}", pqt_size, pqt_header_size, pqt_data_size);
-            println!("-> msg length {:?}", delivery.data.len());
-            println!("-> {}", String::from_utf8(delivery.data).unwrap());
-            println!("---");
+            println!("--- new message ---");
+            //println!("received msg: {:?}", delivery);
+            let payload = delivery.data.clone();
+            let mut uncompressed_message = Vec::new();
+            match delivery.properties.content_encoding().clone().unwrap_or_else(|| ShortString::from("")).as_str() {
+                "br" => {
+                    let mut decompressor = Decompressor::new(&payload[..], 4096);
+                    decompressor.read_to_end(&mut uncompressed_message).unwrap();
+                }
+                _ => {
+                    uncompressed_message = payload;
+                }
+            }
+
+            println!("-> compressed {:?}, uncompressed {:?}", delivery.data.len(), uncompressed_message.len());
+            println!("{}", String::from_utf8(uncompressed_message).unwrap());
             channel
                 .basic_ack(delivery.delivery_tag, BasicAckOptions::default())
                 .await?

@@ -5,4 +5,8 @@ https://www.lucidchart.com/techblog/2019/12/06/json-compression-alternative-bina
 
 https://www.uber.com/en-NZ/blog/trip-data-squeeze-json-encoding-compression/
 
-# MessagePack and zLip ?
+https://www.zupzup.org/rmq-in-rust/
+
+#### MessagePack and zLip ?
+
+#### MessagePack and Brotli(10).
