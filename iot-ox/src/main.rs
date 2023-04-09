@@ -1,10 +1,10 @@
 use deadpool_lapin::{Manager, Pool, PoolError};
 use futures::{join, StreamExt};
-use lapin::{options::*, types::FieldTable, BasicProperties, ConnectionProperties};
+use lapin::{options::*, types::FieldTable, BasicProperties, ConnectionProperties, message::Delivery};
 use std::convert::Infallible;
 use std::result::Result as StdResult;
 use std::time::Duration;
-use std::alloc::Layout;
+use std::mem;
 use thiserror::Error as ThisError;
 use tokio_amqp::*;
 use warp::{Filter, Rejection, Reply};
@@ -140,8 +140,12 @@ async fn init_rmq_listen(pool: Pool) -> Result<()> {
     while let Some(delivery) = consumer.next().await {
         if let Ok(delivery) = delivery {
             println!("received msg: {:?}", delivery);
-            let string = String::from_utf8(delivery.data).unwrap();
-            println!("-> {}", string);
+            let pqt_size = mem::size_of_val(&delivery);
+            let pqt_data_size = mem::size_of_val(&delivery.data);
+            let pqt_header_size = pqt_size - pqt_data_size;
+            println!("-> full {}, header {}, payload {}", pqt_size, pqt_header_size, pqt_data_size);
+            println!("-> msg length {:?}", delivery.data.len());
+            println!("-> {}", String::from_utf8(delivery.data).unwrap());
             println!("---");
             channel
                 .basic_ack(delivery.delivery_tag, BasicAckOptions::default())
