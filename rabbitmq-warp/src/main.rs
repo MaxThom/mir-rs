@@ -17,6 +17,8 @@ type Result<T> = StdResult<T, Error>;
 
 type Connection = deadpool::managed::Object<deadpool_lapin::Manager>;
 
+// https://www.zupzup.org/rmq-in-rust/index.html
+
 #[derive(ThisError, Debug)]
 enum Error {
     #[error("rmq error: {0}")]

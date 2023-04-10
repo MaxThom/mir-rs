@@ -9,4 +9,4 @@ https://www.zupzup.org/rmq-in-rust/
 
 #### MessagePack and zLip ?
 
-#### MessagePack and Brotli(10).
+#### MessagePack and Brotli(10)
