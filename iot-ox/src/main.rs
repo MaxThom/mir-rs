@@ -30,7 +30,7 @@ impl warp::reject::Reject for Error {}
 #[tokio::main]
 async fn main() -> Result<()> {
     let addr = std::env::var("AMQP_ADDR")
-        .unwrap_or_else(|_| "amqp://admin:M3t5h7o9@165.22.226.13:32000/%2f".into());
+        .unwrap_or_else(|_| "".into());
     let manager = Manager::new(addr, ConnectionProperties::default().with_tokio());
     let pool: Pool = deadpool::managed::Pool::builder(manager)
         .max_size(10)
