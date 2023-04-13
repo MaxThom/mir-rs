@@ -89,38 +89,35 @@ async fn main() {
         .expect("can create pool");
     info!("{:?}", settings);
 
-    //for i in 0..10 {
-    //    tokio::spawn(async move | token: CancellationToken, pool: Object<Manager> | {
-    //        tokio::select! {
-    //            // Step 3: Using cloned token to listen to cancellation requests
-    //            _ = token.clone().cancelled() => {
-    //                // The token was cancelled, task can shut down
-    //            }
-    //            _ = send_message(format!("{}", "Hello world!").as_str(), pool.clone()) => {
-    //                // Long work has completed
-    //            }
-    //        }
-    //    });
-    //}
-
-    for i in 0..10 {
-        tokio::spawn(async move {
-            send_message(format!("{}", "Hello world!").as_str(), pool.clone()).await;
-        });
+    for device in settings.devices {
+        for i in 0..device.count {
+            let cloned_token = token.clone();
+            let cloned_pool = pool.clone();
+            let payload = format!("{}-{}", device.name, i);
+            tokio::spawn(async move {
+                tokio::select! {
+                    // Step 3: Using cloned token to listen to cancellation requests
+                    _ = cloned_token.cancelled() => {
+                        // The token was cancelled, task can shut down
+                    }
+                    result = send_message(payload.as_str(), cloned_pool) => {
+                        debug!("result: {}", result.unwrap());
+                    }
+                }
+            });
+        }
     }
-
-    let result = send_message("Hello world!", pool.clone()).await.unwrap();
-
-
-    println!("result: {}", result);
 
     match tokio::signal::ctrl_c().await {
-        Ok(()) => {},
+        Ok(()) => {
+            info!("Shutting down...");
+            token.cancel();
+        },
         Err(err) => {
             eprintln!("Unable to listen for shutdown signal: {}", err);
-            // we also shut down in case of error
         },
     }
+    info!("Shutdown complete.");
 }
 
 fn setup_logger(log_level: String) -> Result<(), fern::InitError> {
