@@ -1,0 +1,5 @@
+[default.shutdown]
+ctrlc = false
+signals = ["term", "hup"]
+grace = 10
+mercy = 5

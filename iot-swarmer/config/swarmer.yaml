@@ -1,0 +1,31 @@
+log_level: "info" # [Off|Error|Warn|Info|Debug|Trace]
+amqp_addr: "unset"
+devices:
+  - name: "weather" # suffix name with -XXX
+    count: 2
+    send_interval_second: "60"
+    sensors:
+    - name: "temperature"
+      hysteresis: "0.0"
+      pattern_name: "real"
+      pattern_args:
+        constant: 5 # for linear
+        min: 0 # for pyramid|wave
+        max: 10  # for pyramid|wave
+    - name: "air_quality"
+      hysteresis: "0.0"
+      pattern_name: "linear" # --------
+      pattern_args:
+        constant: 5
+    - name: "humidity"
+      hysteresis: "0.0"
+      pattern_name: "pyramid" # /\/\/\/\
+      pattern_args:
+        min: 80
+        max: 100
+    - name: "pressure"
+      hysteresis: "0.0"
+      pattern_name: "wave" # ////////
+      pattern_args:
+        min: 30
+        max: 50

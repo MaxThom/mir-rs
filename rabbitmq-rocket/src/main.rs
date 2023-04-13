@@ -1,29 +1,33 @@
 use brotli::{Decompressor, CompressorWriter};
-use deadpool_lapin::{Manager, Pool, PoolError, Object};
+use deadpool_lapin::{Manager, Pool,  Object, PoolError};
+use futures::stream::Filter;
 use futures::{join, StreamExt};
 use lapin::types::ShortString;
 use lapin::{options::*, types::FieldTable, BasicProperties, ConnectionProperties};
 use rocket::State;
-use std::error::Error;
+use tokio::select;
+use tokio::sync::watch;
 use std::io::Write;
-use std::{convert::Infallible, io::Read};
-use std::result::Result as StdResult;
+use std::{ io::Read};
 use std::time::Duration;
 use thiserror::Error as ThisError;
 use tokio_amqp::*;
+use tokio::signal::unix::{signal, SignalKind};
 
 #[macro_use] extern crate rocket;
 
 #[get("/msg/<msg>")]
 async fn msg(pool: &State<Pool>, msg: &str) -> String {
-    write_to_qeue(pool.inner().clone(), msg).await;
+    write_to_qeue(pool.inner().clone(), msg).await.unwrap();
     format!("Hello, {}!", msg)
 }
 
 #[get("/msg?<msg>")]
 async fn msg_qp(pool: &State<Pool>, msg: &str) -> String {
-    write_to_qeue(pool.inner().clone(), msg).await;
-    format!("Hello, {}!", msg)
+
+    let y = write_to_qeue(pool.inner().clone(), msg).await.unwrap();
+
+    format!("Hello, {}!", y)
 }
 
 #[get("/alive>")]
@@ -36,27 +40,9 @@ async fn ready() -> String {
     format!("{}", true)
 }
 
-#[launch]
-fn rocket() -> _ {
-    let addr = std::env::var("AMQP_ADDR")
-        .unwrap_or_else(|_| "".into());
-    let manager = Manager::new(addr, ConnectionProperties::default().with_tokio());
-    let pool: Pool = deadpool::managed::Pool::builder(manager)
-        .max_size(10)
-        .build()
-        .expect("can create pool");
-
-    rocket::build()
-        .manage(pool)
-        .mount("/", routes![alive])
-        .mount("/", routes![ready])
-        .mount("/", routes![msg])
-        .mount("/", routes![msg_qp])
-}
-
+//#[launch]
 //#[tokio::main]
-//#[rocket::main]
-//async fn main() -> Result<(), rocket::Error> {
+//async fn rocket() -> _ {
 //    let addr = std::env::var("AMQP_ADDR")
 //        .unwrap_or_else(|_| "".into());
 //    let manager = Manager::new(addr, ConnectionProperties::default().with_tokio());
@@ -65,28 +51,66 @@ fn rocket() -> _ {
 //        .build()
 //        .expect("can create pool");
 //
-//    println!("Started server at localhost:8000");
+//    
+//    
 //
 //    let srv = rocket::build()
 //        .manage(pool)
 //        .mount("/", routes![alive])
 //        .mount("/", routes![ready])
 //        .mount("/", routes![msg])
-//        .mount("/", routes![msg_qp]);
+//        .mount("/", routes![msg_qp]).launch();
 //
-//    let _ = join!(
-//        srv.launch(),
-//        rmq_listen(pool.clone())
-//    );
+//    let handle = task::spawn(async {
+//        rmq_listen(pool.clone());
+//    });
 //
-//    Ok(())
+//    Ok()
 //}
+
+#[rocket::main]
+async fn main() -> Result<(), rocket::Error> {
+    let addr = std::env::var("AMQP_ADDR")
+        .unwrap_or_else(|_| "amqp://admin:M3t5h7o9@165.22.226.13:32000/%2f".into());
+    println!("AMQP_ADDR: {}", addr);
+    let manager = Manager::new(addr, ConnectionProperties::default().with_tokio());
+    let pool: Pool = deadpool::managed::Pool::builder(manager)
+        .max_size(10)
+        .build()
+        .expect("can create pool");
+
+
+    println!("Started server at localhost:8000");
+
+
+    let _ = join!(
+        rocket::build()
+        .manage(pool.clone())
+        .mount("/", routes![alive])
+        .mount("/", routes![ready])
+        .mount("/", routes![msg])
+        .mount("/", routes![msg_qp])
+        .launch(),
+        rmq_listen(pool.clone())
+    );
+
+    Ok(())
+}
 
 /// /// ///
 /// Write to the queue
 ///
 
-async fn write_to_qeue(pool: Pool, payload: &str) -> Result<&str, Box<dyn Error>> {
+#[derive(ThisError, Debug)]
+enum Error {
+    #[error("rmq error: {0}")]
+    RMQError(#[from] lapin::Error),
+    #[error("rmq pool error: {0}")]
+    RMQPoolError(#[from] PoolError),
+}
+
+
+async fn write_to_qeue(pool: Pool, payload: &str) -> Result<&str, Error> {
     // Create message and compress using Brotli 10
     let mut compressed_data = Vec::new();
     {
@@ -97,19 +121,19 @@ async fn write_to_qeue(pool: Pool, payload: &str) -> Result<&str, Box<dyn Error>
     // Get connection
     let rmq_con = match get_rmq_con(pool).await.map_err(|e| {
         eprintln!("can't connect to rmq, {}", e);
-        Err(e)
+        e
     }) {
         Ok(x) => x,
-        Err(error) => return Err(error.unwrap_err())
+        Err(error) => return Err(error)
     };
 
     // Create channel
     let channel = match rmq_con.create_channel().await.map_err(|e| {
         eprintln!("can't create channel, {}", e);
-        Err(e)
+        e
     }) {
         Ok(x) => x,
-        Err(error) => return Err(Box::new(error.unwrap_err()))
+        Err(error) => return Err(Error::RMQError(error))
     };
 
     // Set encoding type
@@ -125,12 +149,12 @@ async fn write_to_qeue(pool: Pool, payload: &str) -> Result<&str, Box<dyn Error>
         .await
         .map_err(|e| {
             eprintln!("can't publish: {}", e);
-            Err(e)
+            Error::RMQError(e)
         })?
         .await
         .map_err(|e| {
             eprintln!("can't publish: {}", e);
-            Err(e)
+            Error::RMQError(e)
         })?;
     Ok("OK")
 }
@@ -139,7 +163,7 @@ async fn write_to_qeue(pool: Pool, payload: &str) -> Result<&str, Box<dyn Error>
 /// Listen to the queue
 ///
 
-async fn rmq_listen(pool: Pool) -> Result<String, Box<dyn Error>> {
+async fn rmq_listen(pool: Pool) -> Result<String, Error> {
     let mut retry_interval = tokio::time::interval(Duration::from_secs(5));
     loop {
         retry_interval.tick().await;
@@ -151,7 +175,7 @@ async fn rmq_listen(pool: Pool) -> Result<String, Box<dyn Error>> {
     }
 }
 
-async fn init_rmq_listen(pool: Pool) -> Result<(), Box<dyn Error>> {
+async fn init_rmq_listen(pool: Pool) -> Result<(), Error> {
     let rmq_con = get_rmq_con(pool).await.map_err(|e| {
         eprintln!("could not get rmq con: {}", e);
         e
@@ -200,10 +224,11 @@ async fn init_rmq_listen(pool: Pool) -> Result<(), Box<dyn Error>> {
                 .await?
         }
     }
+    print!("exit thread");
     Ok(())
 }
 
-async fn get_rmq_con(pool: Pool) -> Result<Object, Box<dyn Error>> {
+async fn get_rmq_con(pool: Pool) -> Result<Object, Error> {
     let connection = pool.get().await?;
     Ok(connection)
 }
