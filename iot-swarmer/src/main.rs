@@ -177,16 +177,9 @@ async fn send_message(payload : &str, pool: Pool) -> Result<&str, Error> {
         Err(error) => return Err(Error::RMQError(error))
     };
 
-    // Get connection
-    //let rmq_con = get_rmq_con(pool).await.map_err(|e| {
-    //    eprintln!("can't create connection, {}", e);
-    //    e
-    //})?;
-
-
     // Set encoding type
     let headers = BasicProperties::default().with_content_encoding("br".into());
-    let result = match channel
+    match channel
         .basic_publish(
             "",
             "hello",
