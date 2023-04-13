@@ -61,10 +61,6 @@ impl Settings {
             .add_source(File::with_name(CONFIG_FILE_PATH_LOCAL))
             .add_source(Environment::with_prefix(CONFIG_ENV_PREFIX).separator(CONFIG_ENV_SEPARATOR))
             .build().unwrap();
-        //s.merge(File::with_name(CONFIG_FILE_PATH_DEFAULT))?;
-        //s.merge(File::with_name(CONFIG_FILE_PATH_LOCAL))?;
-        //s.merge(Environment::with_prefix(CONFIG_ENV_PREFIX).separator("CONFIG_ENV_SEPARATOR"))?;
-
         s.try_deserialize::<Self>()
     }
 }
@@ -99,9 +95,10 @@ async fn main() {
                     // Step 3: Using cloned token to listen to cancellation requests
                     _ = cloned_token.cancelled() => {
                         // The token was cancelled, task can shut down
+                        debug!("The token was shutdown")
                     }
                     result = send_message(payload.as_str(), cloned_pool) => {
-                        debug!("result: {}", result.unwrap());
+                        debug!("result: {} {}", payload, result.unwrap());
                     }
                 }
             });
@@ -189,7 +186,7 @@ async fn send_message(payload : &str, pool: Pool) -> Result<&str, Error> {
 
     // Set encoding type
     let headers = BasicProperties::default().with_content_encoding("br".into());
-    let result = channel
+    let result = match channel
         .basic_publish(
             "",
             "hello",
@@ -206,8 +203,10 @@ async fn send_message(payload : &str, pool: Pool) -> Result<&str, Error> {
         .map_err(|e| {
             eprintln!("can't publish: {}", e);
             e
-        }).unwrap();
-    //debug!("{:?}", result);
+        }) {
+        Ok(x) => x,
+        Err(error) => return Err(Error::RMQError(error))
+        };
     Ok("OK")
 }
 
