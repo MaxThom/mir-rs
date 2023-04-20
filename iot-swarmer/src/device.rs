@@ -1,24 +1,20 @@
-use core::fmt::Error;
-use std::fmt;
 
-//#[derive(Debug, Clone)]
-pub struct Swarm {
-    pub devices: Vec<LiveDevice>,
+use std::{fmt, collections::HashMap};
+use thiserror::Error as ThisError;
+pub type TelemetryGeneratorType = Box<dyn TelemetryGenerator + Send + Sync>;
+
+#[derive(ThisError, Debug)]
+pub enum Error {
+    #[error("unknown telemetry generator")]
+    UnknownTelemetryGeneratorError,
 }
 
-impl Swarm {
-    pub fn new() -> Result<Self, Error> {
-        Ok(Self {
-            devices: Vec::new(),
-        })
-    }
 
-    pub fn add_device(&mut self, device: LiveDevice) {
-        self.devices.push(device);
-    }
-}
 
-//#[derive(Debug, Clone)]
+//////////
+// Device Struct
+////
+
 pub struct LiveDevice {
     pub name: String,
     pub sensors: Vec<LiveSensor>,
@@ -41,18 +37,8 @@ impl LiveDevice {
 pub struct LiveSensor {
     pub name: String,
     pub hysteresis: f32,
-    pub telemetry: Box<dyn TelemetryGenerator + Send + Sync>,
+    pub telemetry: TelemetryGeneratorType,
 }
-
-//impl LiveSensor {
-//    pub fn new<'a, T: Iterator<Item = f32>>(name: String, hysteresis: f32, telemetry: T) -> Result<Self, Error> {
-//       Ok(Self {
-//          name,
-//            hysteresis,
-//            telemetry: Box::new(telemetry),
-//       })
-//   }
-//}
 
 impl fmt::Debug for LiveSensor {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -62,6 +48,11 @@ impl fmt::Debug for LiveSensor {
             .finish()
     }
 }
+
+
+//////////
+// Telemetry Trait and Struct
+////
 
 pub trait TelemetryGenerator {
     fn next_datapoint(&mut self) -> f32;
@@ -101,6 +92,10 @@ pub struct RealTelemetryGenerator {
     pub min: f32,
     pub max: f32,
 }
+
+//////////
+// Implementation and Factory
+////
 
 impl TelemetryGenerator for LinearTelemetryGenerator {
     fn next_datapoint(&mut self) -> f32 {
@@ -201,4 +196,41 @@ impl RealTelemetryGenerator {
             max,
         })
     }
+}
+
+pub fn get_telemetry_generator_factory(
+    generator: &str,
+    args: HashMap<String, String>,
+) -> Result<TelemetryGeneratorType, Error> {
+    return match generator.to_lowercase().trim() {
+        "linear" => {
+            let constant = args["constant"].parse::<f32>().unwrap();
+            Ok(Box::new(LinearTelemetryGenerator::new(constant).unwrap()))
+        }
+        "pyramid" => {
+            let rate = args["rate"].parse::<f32>().unwrap();
+            let min = args["min"].parse::<f32>().unwrap();
+            let max = args["max"].parse::<f32>().unwrap();
+            Ok(Box::new(
+                PyramidTelemetryGenerator::new(rate, min, max).unwrap(),
+            ))
+        }
+        "wave" => {
+            let rate = args["rate"].parse::<f32>().unwrap();
+            let min = args["min"].parse::<f32>().unwrap();
+            let max = args["max"].parse::<f32>().unwrap();
+            Ok(Box::new(
+                WaveTelemetryGenerator::new(rate, min, max).unwrap(),
+            ))
+        }
+        "real" => {
+            let rate = args["rate"].parse::<f32>().unwrap();
+            let min = args["min"].parse::<f32>().unwrap();
+            let max = args["max"].parse::<f32>().unwrap();
+            Ok(Box::new(
+                RealTelemetryGenerator::new(rate, min, max).unwrap(),
+            ))
+        }
+        _ => Err(Error::UnknownTelemetryGeneratorError),
+    };
 }

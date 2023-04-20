@@ -1,11 +1,11 @@
 use brotli::CompressorWriter;
 use config::{Config, ConfigError, Environment, File};
 use deadpool_lapin::{Manager, Object, Pool, PoolError};
-use device::{RealTelemetryGenerator, TelemetryGenerator};
+use device::{get_telemetry_generator_factory};
 use fern::colors::{Color, ColoredLevelConfig};
 use lapin::options::BasicPublishOptions;
 use lapin::{BasicProperties, ConnectionProperties};
-use log::{debug, error, info, trace, warn};
+use log::{debug, error, info};
 use serde::Deserialize;
 use tokio::time::{sleep, Duration};
 
@@ -17,15 +17,14 @@ use tokio_util::sync::CancellationToken;
 use chrono::Utc;
 
 use crate::device::{
-    LinearTelemetryGenerator, LiveDevice, LiveSensor, PyramidTelemetryGenerator, Swarm,
-    WaveTelemetryGenerator,
+    LiveDevice, LiveSensor
 };
 
 mod device;
 
-type RMQResult<T> = Result<T, PoolError>;
+//type RMQResult<T> = Result<T, PoolError>;
 
-type Connection = deadpool::managed::Object<deadpool_lapin::Manager>;
+//type Connection = deadpool::managed::Object<deadpool_lapin::Manager>;
 
 #[derive(ThisError, Debug)]
 enum Error {
@@ -33,8 +32,6 @@ enum Error {
     RMQError(#[from] lapin::Error),
     #[error("rmq pool error: {0}")]
     RMQPoolError(#[from] PoolError),
-    #[error("unknown telemetry generator")]
-    UnknownTelemetryGeneratorError,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -98,14 +95,14 @@ async fn main() {
     let settings = Settings::new().unwrap();
     setup_logger(settings.log_level.clone()).unwrap();
 
-    let manager = Manager::new(
-        settings.amqp_addr.clone(),
-        ConnectionProperties::default().with_tokio(),
-    );
-    let pool: Pool = Pool::builder(manager)
-        .max_size(10)
-        .build()
-        .expect("can create pool");
+    //let manager = Manager::new(
+    //    settings.amqp_addr.clone(),
+    //    ConnectionProperties::default().with_tokio(),
+    //);
+    //let pool: Pool = Pool::builder(manager)
+    //    .max_size(10)
+    //    .build()
+    //    .expect("can create pool");
     info!("{:?}", settings);
 
     //let mut swarm = Swarm::new().unwrap();
@@ -258,39 +255,3 @@ async fn get_rmq_con(pool: Pool) -> Result<Object, Error> {
     Ok(connection)
 }
 
-fn get_telemetry_generator_factory(
-    generator: &str,
-    args: HashMap<String, String>,
-) -> Result<Box<dyn TelemetryGenerator + Send + Sync>, Error> {
-    return match generator.to_lowercase().trim() {
-        "linear" => {
-            let constant = args["constant"].parse::<f32>().unwrap();
-            Ok(Box::new(LinearTelemetryGenerator::new(constant).unwrap()))
-        }
-        "pyramid" => {
-            let rate = args["rate"].parse::<f32>().unwrap();
-            let min = args["min"].parse::<f32>().unwrap();
-            let max = args["max"].parse::<f32>().unwrap();
-            Ok(Box::new(
-                PyramidTelemetryGenerator::new(rate, min, max).unwrap(),
-            ))
-        }
-        "wave" => {
-            let rate = args["rate"].parse::<f32>().unwrap();
-            let min = args["min"].parse::<f32>().unwrap();
-            let max = args["max"].parse::<f32>().unwrap();
-            Ok(Box::new(
-                WaveTelemetryGenerator::new(rate, min, max).unwrap(),
-            ))
-        }
-        "real" => {
-            let rate = args["rate"].parse::<f32>().unwrap();
-            let min = args["min"].parse::<f32>().unwrap();
-            let max = args["max"].parse::<f32>().unwrap();
-            Ok(Box::new(
-                RealTelemetryGenerator::new(rate, min, max).unwrap(),
-            ))
-        }
-        _ => Err(Error::UnknownTelemetryGeneratorError),
-    };
-}
