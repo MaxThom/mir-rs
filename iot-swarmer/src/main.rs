@@ -1,12 +1,12 @@
 use brotli::CompressorWriter;
 use config::{Config, ConfigError, Environment, File};
 use deadpool_lapin::{Manager, Object, Pool, PoolError};
-use device::{get_telemetry_generator_factory};
+use device::{Device};
 use fern::colors::{Color, ColoredLevelConfig};
 use lapin::options::BasicPublishOptions;
 use lapin::{BasicProperties, ConnectionProperties};
 use log::{debug, error, info};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tokio::time::{sleep, Duration};
 
 use std::time::{SystemTime};
@@ -17,7 +17,7 @@ use tokio_util::sync::CancellationToken;
 use chrono::Utc;
 
 use crate::device::{
-    LiveDevice, LiveSensor
+    LiveDevice
 };
 
 mod device;
@@ -35,29 +35,13 @@ enum Error {
 }
 
 #[derive(Debug, Deserialize, Clone)]
-pub struct Sensor {
-    pub name: String,
-    pub hysteresis: f32,
-    pub pattern_name: String,
-    pub pattern_args: HashMap<String, String>,
-}
-
-#[derive(Debug, Deserialize, Clone)]
-pub struct Device {
-    pub name: String,
-    pub count: u32,
-    pub send_interval_second: u32,
-    pub sensors: Vec<Sensor>,
-}
-
-#[derive(Debug, Deserialize, Clone)]
 pub struct Settings {
     pub devices: Vec<Device>,
     pub log_level: String,
     pub amqp_addr: String,
 }
 
-#[derive(Debug, Deserialize, Clone, Default)]
+#[derive(Debug, Serialize, Clone, Default)]
 pub struct DevicePayload {
     pub device_id: String,
     pub timestamp: String,
@@ -95,27 +79,27 @@ async fn main() {
     let settings = Settings::new().unwrap();
     setup_logger(settings.log_level.clone()).unwrap();
 
-    //let manager = Manager::new(
-    //    settings.amqp_addr.clone(),
-    //    ConnectionProperties::default().with_tokio(),
-    //);
-    //let pool: Pool = Pool::builder(manager)
-    //    .max_size(10)
-    //    .build()
-    //    .expect("can create pool");
+    let manager = Manager::new(
+        settings.amqp_addr.clone(),
+        ConnectionProperties::default().with_tokio(),
+    );
+    let pool: Pool = Pool::builder(manager)
+        .max_size(10)
+        .build()
+        .expect("can create pool");
     info!("{:?}", settings);
 
-    //let mut swarm = Swarm::new().unwrap();
     for device in settings.devices {
         for i in 0..device.count {
             let y = device.clone();
             let cloned_token = token.clone();
+            let cloned_pool = pool.clone();
             tokio::spawn(async move {
                 tokio::select! {
                     _ = cloned_token.cancelled() => {
                         debug!("The token was shutdown")
                     }
-                    _ = start_device(i, y) => {
+                    _ = start_device(cloned_pool, i, y) => {
                         debug!("device shuting down...");
                     }
                 }
@@ -167,20 +151,9 @@ fn setup_logger(log_level: String) -> Result<(), fern::InitError> {
     Ok(())
 }
 
-async fn start_device(index: u32, template: Device)  {
+async fn start_device(pool: Pool, index: u32, template: Device)  {
     // Create virtual device
-    let mut device = LiveDevice::new(format!("{}-{}", template.name, index)).unwrap();
-    for sensor in template.sensors {
-        device.add_sensor(LiveSensor {
-            name: sensor.name.clone(),
-            hysteresis: sensor.hysteresis,
-            telemetry: get_telemetry_generator_factory(
-                sensor.pattern_name.as_str(),
-                sensor.pattern_args.clone(),
-            )
-            .unwrap(),
-        });
-    }
+    let mut device = LiveDevice::from_template(&template, index).unwrap();
 
     // Loop
     loop {
@@ -192,6 +165,8 @@ async fn start_device(index: u32, template: Device)  {
             payload.payload.insert(sensor.name.clone(), x);
         }
         info!("{:?}", payload);
+        let str_payload = serde_json::to_string(&payload).unwrap();
+        _ = send_message(&str_payload, pool.clone()).await;
         sleep(Duration::from_secs(template.send_interval_second.into())).await;
     }
 }

@@ -34,7 +34,7 @@ devices:
         min: 30
         max: 50
   - name: "aquarium" # suffix name with -XXX
-    count: 1
+    count: 2
     send_interval_second: "2"
     sensors:
     - name: "temperature"

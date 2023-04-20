@@ -1,5 +1,6 @@
 
 use std::{fmt, collections::HashMap};
+use serde::Deserialize;
 use thiserror::Error as ThisError;
 pub type TelemetryGeneratorType = Box<dyn TelemetryGenerator + Send + Sync>;
 
@@ -9,7 +10,21 @@ pub enum Error {
     UnknownTelemetryGeneratorError,
 }
 
+#[derive(Debug, Deserialize, Clone)]
+pub struct Sensor {
+    pub name: String,
+    pub hysteresis: f32,
+    pub pattern_name: String,
+    pub pattern_args: HashMap<String, String>,
+}
 
+#[derive(Debug, Deserialize, Clone)]
+pub struct Device {
+    pub name: String,
+    pub count: u32,
+    pub send_interval_second: u32,
+    pub sensors: Vec<Sensor>,
+}
 
 //////////
 // Device Struct
@@ -26,6 +41,22 @@ impl LiveDevice {
             name,
             sensors: Vec::new(),
         })
+    }
+
+    pub fn from_template(template: &Device, index: u32) -> Result<Self, Error> {
+        let mut device = LiveDevice::new(format!("{}-{}", template.name, index)).unwrap();
+        for sensor in &template.sensors {
+            device.add_sensor(LiveSensor {
+                name: sensor.name.clone(),
+                hysteresis: sensor.hysteresis,
+                telemetry: get_telemetry_generator_factory(
+                    sensor.pattern_name.as_str(),
+                    sensor.pattern_args.clone(),
+                )
+                .unwrap(),
+            });
+        }
+        Ok(device)
     }
 
     pub fn add_sensor(&mut self, sensor: LiveSensor) -> &mut Self {
