@@ -1,24 +1,6 @@
 use core::fmt::Error;
 use std::fmt;
 
-//#[derive(Debug, Clone)]
-pub struct Swarm {
-    pub devices: Vec<LiveDevice>,
-}
-
-impl Swarm {
-    pub fn new() -> Result<Self, Error> {
-        Ok(Self {
-            devices: Vec::new(),
-        })
-    }
-
-    pub fn add_device(&mut self, device: LiveDevice) {
-        self.devices.push(device);
-    }
-}
-
-//#[derive(Debug, Clone)]
 pub struct LiveDevice {
     pub name: String,
     pub sensors: Vec<LiveSensor>,
@@ -41,19 +23,8 @@ impl LiveDevice {
 pub struct LiveSensor {
     pub name: String,
     pub hysteresis: f32,
-    pub telemetry: Box<dyn TelemetryGenerator + Send + Sync>,
+    pub telemetry: Box<dyn TelemetryGenerator>,
 }
-
-//impl LiveSensor {
-//    pub fn new<'a, T: Iterator<Item = f32>>(name: String, hysteresis: f32, telemetry: T) -> Result<Self, Error> {
-//       Ok(Self {
-//          name,
-//            hysteresis,
-//            telemetry: Box::new(telemetry),
-//       })
-//   }
-//}
-
 impl fmt::Debug for LiveSensor {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Sensor")
@@ -130,9 +101,9 @@ impl TelemetryGenerator for WaveTelemetryGenerator {
 impl TelemetryGenerator for PyramidTelemetryGenerator {
     fn next_datapoint(&mut self) -> f32 {
         let value = self.previous_value + self.rate;
-        if value >= self.max {
+        if value > self.max {
             self.rate = self.rate * -1.0;
-        } else if value <= self.min {
+        } else if value < self.min {
             self.rate = self.rate * -1.0;
         }
         self.previous_value = value;

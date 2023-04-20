@@ -2,8 +2,8 @@ log_level: "info" # [Off|Error|Warn|Info|Debug|Trace]
 amqp_addr: "unset"
 devices:
   - name: "weather" # suffix name with -XXX
-    count: 1
-    send_interval_second: "60"
+    count: 0
+    send_interval_second: "2"
     sensors:
     - name: "temperature"
       hysteresis: "0.0"
@@ -34,13 +34,13 @@ devices:
         min: 30
         max: 50
   - name: "aquarium" # suffix name with -XXX
-    count: 0
-    send_interval_second: "60"
+    count: 1
+    send_interval_second: "2"
     sensors:
     - name: "temperature"
       hysteresis: "0.0"
-      pattern_name: "real"
+      pattern_name: "pyramid"
       pattern_args:
         rate: 1
         min: 0 # for pyramid|wave
-        max: 10  # for pyramid|wave
+        max: 4  # for pyramid|wave

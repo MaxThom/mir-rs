@@ -1,21 +1,25 @@
-
 use brotli::CompressorWriter;
-use deadpool_lapin::{Manager, Pool, PoolError, Object};
+use config::{Config, ConfigError, Environment, File};
+use deadpool_lapin::{Manager, Object, Pool, PoolError};
 use device::{RealTelemetryGenerator, TelemetryGenerator};
+use fern::colors::{Color, ColoredLevelConfig};
 use lapin::options::BasicPublishOptions;
-use lapin::{ConnectionProperties, BasicProperties};
+use lapin::{BasicProperties, ConnectionProperties};
+use log::{debug, error, info, trace, warn};
 use serde::Deserialize;
-use std::thread;
+use tokio::time::{sleep, Duration};
+
+use std::time::{SystemTime};
 use std::{collections::HashMap, io::Write};
 use thiserror::Error as ThisError;
 use tokio_amqp::*;
-use config::{Config, ConfigError, Environment, File};
-use log::{debug, error, info, trace, warn};
-use std::time::{SystemTime, Duration};
-use fern::colors::{Color, ColoredLevelConfig};
 use tokio_util::sync::CancellationToken;
+use chrono::Utc;
 
-use crate::device::{Swarm, LiveDevice, LiveSensor, PyramidTelemetryGenerator, LinearTelemetryGenerator, WaveTelemetryGenerator};
+use crate::device::{
+    LinearTelemetryGenerator, LiveDevice, LiveSensor, PyramidTelemetryGenerator, Swarm,
+    WaveTelemetryGenerator,
+};
 
 mod device;
 
@@ -56,6 +60,13 @@ pub struct Settings {
     pub amqp_addr: String,
 }
 
+#[derive(Debug, Deserialize, Clone, Default)]
+pub struct DevicePayload {
+    pub device_id: String,
+    pub timestamp: String,
+    pub payload: HashMap<String, f32>,
+}
+
 const CONFIG_FILE_PATH_DEFAULT: &str = "./config/swarmer.yaml";
 const CONFIG_FILE_PATH_LOCAL: &str = "./config/local_swarmer.yaml";
 // This makes it so "SWARMER_DEVICES__0__NAME overrides devices[0].name
@@ -68,7 +79,8 @@ impl Settings {
             .add_source(File::with_name(CONFIG_FILE_PATH_DEFAULT))
             .add_source(File::with_name(CONFIG_FILE_PATH_LOCAL))
             .add_source(Environment::with_prefix(CONFIG_ENV_PREFIX).separator(CONFIG_ENV_SEPARATOR))
-            .build().unwrap();
+            .build()
+            .unwrap();
         s.try_deserialize::<Self>()
     }
 }
@@ -86,73 +98,42 @@ async fn main() {
     let settings = Settings::new().unwrap();
     setup_logger(settings.log_level.clone()).unwrap();
 
-    let manager = Manager::new(settings.amqp_addr.clone(), ConnectionProperties::default().with_tokio());
+    let manager = Manager::new(
+        settings.amqp_addr.clone(),
+        ConnectionProperties::default().with_tokio(),
+    );
     let pool: Pool = Pool::builder(manager)
         .max_size(10)
         .build()
         .expect("can create pool");
     info!("{:?}", settings);
 
-    let mut swarm = Swarm::new().unwrap();
+    //let mut swarm = Swarm::new().unwrap();
     for device in settings.devices {
         for i in 0..device.count {
-            let mut live_device = LiveDevice::new(format!("{}-{}", device.name, i)).unwrap();
-            for sensor in device.sensors.iter() {
-                live_device.add_sensor(LiveSensor{
-                    name: sensor.name.clone(),
-                    hysteresis: sensor.hysteresis,
-                    telemetry: get_telemetry_generator_factory(sensor.pattern_name.as_str(), sensor.pattern_args.clone()).unwrap(),
-                });
-            }
-            swarm.add_device(live_device);
+            let y = device.clone();
+            let cloned_token = token.clone();
+            tokio::spawn(async move {
+                tokio::select! {
+                    _ = cloned_token.cancelled() => {
+                        debug!("The token was shutdown")
+                    }
+                    _ = start_device(i, y) => {
+                        debug!("device shuting down...");
+                    }
+                }
+            });
         }
     }
-
-
-    for _ in 0..10{
-        for dev in &mut swarm.devices {
-            let mut gen = format!("\n{}", dev.name);
-
-            for sensor in &mut dev.sensors {
-                let x = sensor.telemetry.next_datapoint();
-                gen.push_str(format!("\n  {}, {}", sensor.name, x).as_str());
-            }
-            debug!("{}", gen);
-        }
-        thread::sleep(Duration::from_secs(5));
-    }
-
-    //for device in settings.devices {
-    //    // Create the sensors pattern
-    //    // Create the device
-    //    for i in 0..device.count {
-    //        // Create the device and copy pattern
-    //        let cloned_token = token.clone();
-    //        let cloned_pool = pool.clone();
-    //        let payload = format!("{}-{}", device.name, i);
-    //        tokio::spawn(async move {
-    //            tokio::select! {
-    //                // Step 3: Using cloned token to listen to cancellation requests
-    //                _ = cloned_token.cancelled() => {
-    //                    // The token was cancelled, task can shut down
-    //                    debug!("The token was shutdown")
-    //                }
-    //                result = send_message(payload.as_str(), cloned_pool) => {
-    //                    debug!("result: {} {}", payload, result.unwrap());
-    //                }
-    //            }
-    //        });
-    //    }
-    //}
 
     match tokio::signal::ctrl_c().await {
         Ok(()) => {
             info!("Shutting down...");
             token.cancel();
-        },
+        }
         Err(err) => {
             eprintln!("Unable to listen for shutdown signal: {}", err);
-        },
+        }
     }
     info!("Shutdown complete.");
 }
@@ -189,7 +170,36 @@ fn setup_logger(log_level: String) -> Result<(), fern::InitError> {
     Ok(())
 }
 
-async fn send_message(payload : &str, pool: Pool) -> Result<&str, Error> {
+async fn start_device(index: u32, template: Device)  {
+    // Create virtual device
+    let mut device = LiveDevice::new(format!("{}-{}", template.name, index)).unwrap();
+    for sensor in template.sensors {
+        device.add_sensor(LiveSensor {
+            name: sensor.name.clone(),
+            hysteresis: sensor.hysteresis,
+            telemetry: get_telemetry_generator_factory(
+                sensor.pattern_name.as_str(),
+                sensor.pattern_args.clone(),
+            )
+            .unwrap(),
+        });
+    }
+
+    // Loop
+    loop {
+        let mut payload = DevicePayload::default();
+        payload.device_id = device.name.clone();
+        payload.timestamp = Utc::now().to_string();
+        for sensor in &mut device.sensors {
+            let x = sensor.telemetry.next_datapoint();
+            payload.payload.insert(sensor.name.clone(), x);
+        }
+        info!("{:?}", payload);
+        sleep(Duration::from_secs(template.send_interval_second.into())).await;
+    }
+}
+
+async fn send_message(payload: &str, pool: Pool) -> Result<&str, Error> {
     debug!("send_message({})", payload);
     // Create message and compress using Brotli 10
     //let payload = "Hello world!Hello world!Hello world!Hello world!Hello world!Hello world!Hello world!Hello world!Hello world!Hello world!Hello world!Hello world!Hello world!Hello world!Hello world!".as_bytes();
@@ -205,7 +215,7 @@ async fn send_message(payload : &str, pool: Pool) -> Result<&str, Error> {
         e
     }) {
         Ok(x) => x,
-        Err(error) => return Err(error)
+        Err(error) => return Err(error),
     };
 
     // Create channel
@@ -214,7 +224,7 @@ async fn send_message(payload : &str, pool: Pool) -> Result<&str, Error> {
         e
     }) {
         Ok(x) => x,
-        Err(error) => return Err(Error::RMQError(error))
+        Err(error) => return Err(Error::RMQError(error)),
     };
 
     // Set encoding type
@@ -238,8 +248,8 @@ async fn send_message(payload : &str, pool: Pool) -> Result<&str, Error> {
             e
         }) {
         Ok(x) => x,
-        Err(error) => return Err(Error::RMQError(error))
-        };
+        Err(error) => return Err(Error::RMQError(error)),
+    };
     Ok("OK")
 }
 
@@ -248,30 +258,39 @@ async fn get_rmq_con(pool: Pool) -> Result<Object, Error> {
     Ok(connection)
 }
 
-fn get_telemetry_generator_factory(generator: &str, args: HashMap<String, String>) -> Result<Box<dyn TelemetryGenerator>, Error> {
+fn get_telemetry_generator_factory(
+    generator: &str,
+    args: HashMap<String, String>,
+) -> Result<Box<dyn TelemetryGenerator + Send + Sync>, Error> {
     return match generator.to_lowercase().trim() {
         "linear" => {
             let constant = args["constant"].parse::<f32>().unwrap();
             Ok(Box::new(LinearTelemetryGenerator::new(constant).unwrap()))
-        },
+        }
         "pyramid" => {
             let rate = args["rate"].parse::<f32>().unwrap();
             let min = args["min"].parse::<f32>().unwrap();
             let max = args["max"].parse::<f32>().unwrap();
-            Ok(Box::new(PyramidTelemetryGenerator::new(rate, min, max).unwrap()))
-        },
+            Ok(Box::new(
+                PyramidTelemetryGenerator::new(rate, min, max).unwrap(),
+            ))
+        }
         "wave" => {
             let rate = args["rate"].parse::<f32>().unwrap();
             let min = args["min"].parse::<f32>().unwrap();
             let max = args["max"].parse::<f32>().unwrap();
-            Ok(Box::new(WaveTelemetryGenerator::new(rate, min, max).unwrap()))
-        },
+            Ok(Box::new(
+                WaveTelemetryGenerator::new(rate, min, max).unwrap(),
+            ))
+        }
         "real" => {
             let rate = args["rate"].parse::<f32>().unwrap();
             let min = args["min"].parse::<f32>().unwrap();
             let max = args["max"].parse::<f32>().unwrap();
-            Ok(Box::new(RealTelemetryGenerator::new(rate, min, max).unwrap()))
-        },
-        _ => Err(Error::UnknownTelemetryGeneratorError)
+            Ok(Box::new(
+                RealTelemetryGenerator::new(rate, min, max).unwrap(),
+            ))
+        }
+        _ => Err(Error::UnknownTelemetryGeneratorError),
     };
 }
