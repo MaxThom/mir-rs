@@ -3,9 +3,10 @@ use config::{Config, ConfigError, Environment, File};
 use deadpool_lapin::{Manager, Object, Pool, PoolError};
 use device::{Device};
 use fern::colors::{Color, ColoredLevelConfig};
-use lapin::options::BasicPublishOptions;
+use lapin::options::{BasicPublishOptions, ExchangeDeclareOptions};
+use lapin::types::FieldTable;
 use lapin::{BasicProperties, ConnectionProperties};
-use log::{debug, error, info};
+use log::{debug, error, info, trace};
 use serde::{Deserialize, Serialize};
 use tokio::time::{sleep, Duration};
 
@@ -172,14 +173,13 @@ async fn start_device(pool: Pool, index: u32, template: Device)  {
 }
 
 async fn send_message(payload: &str, pool: Pool) -> Result<&str, Error> {
-    debug!("send_message({})", payload);
     // Create message and compress using Brotli 10
-    //let payload = "Hello world!Hello world!Hello world!Hello world!Hello world!Hello world!Hello world!Hello world!Hello world!Hello world!Hello world!Hello world!Hello world!Hello world!Hello world!".as_bytes();
     let mut compressed_data = Vec::new();
     {
         let mut compressor = CompressorWriter::new(&mut compressed_data, 4096, 10, 22);
         compressor.write_all(payload.as_bytes()).unwrap();
     }
+    trace!("-> compressed {:?}, uncompressed {:?}", compressed_data.len(), payload.len());
 
     // Get connection
     let rmq_con = match get_rmq_con(pool).await.map_err(|e| {
@@ -199,12 +199,18 @@ async fn send_message(payload: &str, pool: Pool) -> Result<&str, Error> {
         Err(error) => return Err(Error::RMQError(error)),
     };
 
+    channel.exchange_declare(
+        "iot",
+        lapin::ExchangeKind::Topic,
+        ExchangeDeclareOptions::default(),
+        FieldTable::default()).await?;
+
     // Set encoding type
     let headers = BasicProperties::default().with_content_encoding("br".into());
     match channel
         .basic_publish(
-            "",
-            "hello",
+            "iot",
+            "swarm.telemetry.v1",
             BasicPublishOptions::default(),
             &compressed_data,
             headers,
