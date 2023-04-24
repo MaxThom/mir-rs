@@ -1,0 +1,8 @@
+[workspace]
+
+members = [
+    "iot/iot-flux",
+    "iot/iot-swarmer",
+    "playground",
+    "y",
+]

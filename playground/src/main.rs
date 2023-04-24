@@ -1,237 +1,216 @@
-use brotli::CompressorWriter;
-use config::{Config, ConfigError, Environment, File};
-use deadpool_lapin::{Manager, Object, Pool, PoolError};
-use device::{RealTelemetryGenerator, TelemetryGenerator};
-use fern::colors::{Color, ColoredLevelConfig};
-use lapin::options::BasicPublishOptions;
-use lapin::{BasicProperties, ConnectionProperties};
-use log::{debug, error, info, trace, warn};
-use serde::Deserialize;
-use tokio::time::{sleep, Duration};
+// try_from_into.rs
+// TryFrom is a simple and safe type conversion that may fail in a controlled way under some circumstances.
+// Basically, this is the same as From. The main difference is that this should return a Result type
+// instead of the target type itself.
+// You can read more about it at https://doc.rust-lang.org/std/convert/trait.TryFrom.html
+// Execute `rustlings hint try_from_into` or use the `hint` watch subcommand for a hint.
 
-use std::time::{SystemTime};
-use std::{collections::HashMap, io::Write};
-use thiserror::Error as ThisError;
-use tokio_amqp::*;
-use tokio_util::sync::CancellationToken;
-use chrono::Utc;
+use std::convert::{TryFrom, TryInto};
 
-use crate::device::{
-    LinearTelemetryGenerator, LiveDevice, LiveSensor, PyramidTelemetryGenerator, Swarm,
-    WaveTelemetryGenerator,
-};
-
-mod device;
-
-type RMQResult<T> = Result<T, PoolError>;
-
-type Connection = deadpool::managed::Object<deadpool_lapin::Manager>;
-
-#[derive(ThisError, Debug)]
-enum Error {
-    #[error("rmq error: {0}")]
-    RMQError(#[from] lapin::Error),
-    #[error("rmq pool error: {0}")]
-    RMQPoolError(#[from] PoolError),
-    #[error("unknown telemetry generator")]
-    UnknownTelemetryGeneratorError,
+#[derive(Debug, PartialEq)]
+struct Color {
+    red: u8,
+    green: u8,
+    blue: u8,
 }
 
-#[derive(Debug, Deserialize, Clone)]
-pub struct Sensor {
-    pub name: String,
-    pub hysteresis: f32,
-    pub pattern_name: String,
-    pub pattern_args: HashMap<String, String>,
+// We will use this error type for these `TryFrom` conversions.
+#[derive(Debug, PartialEq)]
+enum IntoColorError {
+    // Incorrect length of slice
+    BadLen,
+    // Integer conversion error
+    IntConversion,
 }
 
-#[derive(Debug, Deserialize, Clone)]
-pub struct Device {
-    pub name: String,
-    pub count: u32,
-    pub send_interval_second: u32,
-    pub sensors: Vec<Sensor>,
-}
+// I AM NOT DONE
 
-#[derive(Debug, Deserialize, Clone)]
-pub struct Settings {
-    pub devices: Vec<Device>,
-    pub log_level: String,
-    pub amqp_addr: String,
-}
-
-#[derive(Debug, Deserialize, Clone, Default)]
-pub struct DevicePayload {
-    pub device_id: String,
-    pub timestamp: String,
-    pub payload: HashMap<String, f32>,
-}
-
-const CONFIG_FILE_PATH_DEFAULT: &str = "./config/swarmer.yaml";
-const CONFIG_FILE_PATH_LOCAL: &str = "./config/local_swarmer.yaml";
-// This makes it so "SWARMER_DEVICES__0__NAME overrides devices[0].name
-const CONFIG_ENV_PREFIX: &str = "SWARMER";
-const CONFIG_ENV_SEPARATOR: &str = "__";
-
-impl Settings {
-    pub fn new() -> Result<Self, ConfigError> {
-        let s = Config::builder()
-            .add_source(File::with_name(CONFIG_FILE_PATH_DEFAULT))
-            .add_source(File::with_name(CONFIG_FILE_PATH_LOCAL))
-            .add_source(Environment::with_prefix(CONFIG_ENV_PREFIX).separator(CONFIG_ENV_SEPARATOR))
-            .build()
-            .unwrap();
-        s.try_deserialize::<Self>()
+impl Color {
+    fn new(red: u8, green: u8, blue: u8) -> Result<Self, IntoColorError> {
+        if red < 0 || red > 255 {
+            return Err(IntoColorError::IntConversion)
+        }
+        if blue < 0 || blue > 255 {
+            return Err(IntoColorError::IntConversion)
+        }
+        if green < 0 || green > 255 {
+            return Err(IntoColorError::IntConversion)
+        }
+        Ok(Color { red:red, green:green, blue:blue })
     }
 }
 
-// https://blog.logrocket.com/configuration-management-in-rust-web-services/
-// https://tokio.rs/tokio/topics/shutdown
+// Your task is to complete this implementation
+// and return an Ok result of inner type Color.
+// You need to create an implementation for a tuple of three integers,
+// an array of three integers, and a slice of integers.
+//
+// Note that the implementation for tuple and array will be checked at compile time,
+// but the slice implementation needs to check the slice length!
+// Also note that correct RGB color values must be integers in the 0..=255 range.
 
-// TODO: Object recycling
-// TODO: AMQP connection pooling
-
-#[tokio::main]
-async fn main() {
-    let token = CancellationToken::new();
-
-    let settings = Settings::new().unwrap();
-    setup_logger(settings.log_level.clone()).unwrap();
-
-    let manager = Manager::new(
-        settings.amqp_addr.clone(),
-        ConnectionProperties::default().with_tokio(),
-    );
-    let pool: Pool = Pool::builder(manager)
-        .max_size(10)
-        .build()
-        .expect("can create pool");
-    info!("{:?}", settings);
-
-    //let mut swarm = Swarm::new().unwrap();
-    for device in settings.devices {
-        for i in 0..device.count {
-            let y = device.clone();
-            let cloned_token = token.clone();
-            tokio::spawn(async move {
-                tokio::select! {
-                    _ = cloned_token.cancelled() => {
-                        debug!("The token was shutdown")
-                    }
-                    _ = start_device(i, y) => {
-                        debug!("device shuting down...");
-                    }
-                }
-            });
-        }
-    }
-
-    match tokio::signal::ctrl_c().await {
-        Ok(()) => {
-            info!("Shutting down...");
-            token.cancel();
-        }
-        Err(err) => {
-            eprintln!("Unable to listen for shutdown signal: {}", err);
-        }
-    }
-    info!("Shutdown complete.");
-}
-
-fn setup_logger(log_level: String) -> Result<(), fern::InitError> {
-    let level = match log_level.to_lowercase().trim() {
-        "trace" => log::LevelFilter::Trace,
-        "debug" => log::LevelFilter::Debug,
-        "info" => log::LevelFilter::Info,
-        "warn" => log::LevelFilter::Warn,
-        "error" => log::LevelFilter::Error,
-        _ => log::LevelFilter::Info,
-    };
-
-    let colors = ColoredLevelConfig::new()
-        .info(Color::Green)
-        .debug(Color::Cyan)
-        .trace(Color::Magenta);
-
-    fern::Dispatch::new()
-        .format(move |out, message, record| {
-            out.finish(format_args!(
-                "[{} {} {}] {}",
-                humantime::format_rfc3339_seconds(SystemTime::now()),
-                colors.color(record.level()),
-                record.target(),
-                message
-            ))
-        })
-        .level(level)
-        .chain(std::io::stdout())
-        //.chain(fern::log_file("output.log")?)
-        .apply()?;
-    Ok(())
-}
-
-async fn start_device(index: u32, template: Device)  {
-    // Create virtual device
-    let mut device = LiveDevice::new(format!("{}-{}", template.name, index)).unwrap();
-    for sensor in template.sensors {
-        device.add_sensor(LiveSensor {
-            name: sensor.name.clone(),
-            hysteresis: sensor.hysteresis,
-            telemetry: get_telemetry_generator_factory(
-                sensor.pattern_name.as_str(),
-                sensor.pattern_args.clone(),
-            )
-            .unwrap(),
-        });
-    }
-
-    // Loop
-    loop {
-        let mut payload = DevicePayload::default();
-        payload.device_id = device.name.clone();
-        payload.timestamp = Utc::now().to_string();
-        for sensor in &mut device.sensors {
-            let x = sensor.telemetry.next_datapoint();
-            payload.payload.insert(sensor.name.clone(), x);
-        }
-        info!("{:?}", payload);
-        sleep(Duration::from_secs(template.send_interval_second.into())).await;
+// Tuple implementation
+impl TryFrom<(i16, i16, i16)> for Color {
+    type Error = IntoColorError;
+    fn try_from(tuple: (i16, i16, i16)) -> Result<Self, Self::Error> {
+        Color::new(tuple.0 as u8, tuple.1 as u8, tuple.2 as u8)
     }
 }
 
-fn get_telemetry_generator_factory(
-    generator: &str,
-    args: HashMap<String, String>,
-) -> Result<Box<dyn TelemetryGenerator>, Error> {
-    return match generator.to_lowercase().trim() {
-        "linear" => {
-            let constant = args["constant"].parse::<f32>().unwrap();
-            Ok(Box::new(LinearTelemetryGenerator::new(constant).unwrap()))
+// Array implementation
+impl TryFrom<[i16; 3]> for Color {
+    type Error = IntoColorError;
+    fn try_from(arr: [i16; 3]) -> Result<Self, Self::Error> {
+        if arr.len() != 3 {
+            return Err(IntoColorError::BadLen);
         }
-        "pyramid" => {
-            let rate = args["rate"].parse::<f32>().unwrap();
-            let min = args["min"].parse::<f32>().unwrap();
-            let max = args["max"].parse::<f32>().unwrap();
-            Ok(Box::new(
-                PyramidTelemetryGenerator::new(rate, min, max).unwrap(),
-            ))
+
+        Color::new(arr[0] as u8, arr[1] as u8, arr[2] as u8)
+    }
+}
+
+// Slice implementation
+impl TryFrom<&[i16]> for Color {
+    type Error = IntoColorError;
+    fn try_from(slice: &[i16]) -> Result<Self, Self::Error> {
+        if slice.len() != 3 {
+            return Err(IntoColorError::BadLen);
         }
-        "wave" => {
-            let rate = args["rate"].parse::<f32>().unwrap();
-            let min = args["min"].parse::<f32>().unwrap();
-            let max = args["max"].parse::<f32>().unwrap();
-            Ok(Box::new(
-                WaveTelemetryGenerator::new(rate, min, max).unwrap(),
-            ))
-        }
-        "real" => {
-            let rate = args["rate"].parse::<f32>().unwrap();
-            let min = args["min"].parse::<f32>().unwrap();
-            let max = args["max"].parse::<f32>().unwrap();
-            Ok(Box::new(
-                RealTelemetryGenerator::new(rate, min, max).unwrap(),
-            ))
-        }
-        _ => Err(Error::UnknownTelemetryGeneratorError),
-    };
+
+        Color::new(slice[0] as u8, slice[1] as u8, slice[2] as u8)
+    }
+}
+
+fn main() {
+    // Use the `try_from` function
+    let c1 = Color::try_from((183, 65, 14));
+    println!("{:?}", c1);
+
+    // Since TryFrom is implemented for Color, we should be able to use TryInto
+    let c2: Result<Color, _> = [183, 65, 14].try_into();
+    println!("{:?}", c2);
+
+    let v = vec![183, 65, 14];
+    // With slice we should use `try_from` function
+    let c3 = Color::try_from(&v[..]);
+    println!("{:?}", c3);
+    // or take slice within round brackets and use TryInto
+    let c4: Result<Color, _> = (&v[..]).try_into();
+    println!("{:?}", c4);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_tuple_out_of_range_positive() {
+        assert_eq!(
+            Color::try_from((256, 1000, 10000)),
+            Err(IntoColorError::IntConversion)
+        );
+    }
+    #[test]
+    fn test_tuple_out_of_range_negative() {
+        assert_eq!(
+            Color::try_from((-1, -10, -256)),
+            Err(IntoColorError::IntConversion)
+        );
+    }
+    #[test]
+    fn test_tuple_sum() {
+        assert_eq!(
+            Color::try_from((-1, 255, 255)),
+            Err(IntoColorError::IntConversion)
+        );
+    }
+    #[test]
+    fn test_tuple_correct() {
+        let c: Result<Color, _> = (183, 65, 14).try_into();
+        assert!(c.is_ok());
+        assert_eq!(
+            c.unwrap(),
+            Color {
+                red: 183,
+                green: 65,
+                blue: 14
+            }
+        );
+    }
+    #[test]
+    fn test_array_out_of_range_positive() {
+        let c: Result<Color, _> = [1000, 10000, 256].try_into();
+        assert_eq!(c, Err(IntoColorError::IntConversion));
+    }
+    #[test]
+    fn test_array_out_of_range_negative() {
+        let c: Result<Color, _> = [-10, -256, -1].try_into();
+        assert_eq!(c, Err(IntoColorError::IntConversion));
+    }
+    #[test]
+    fn test_array_sum() {
+        let c: Result<Color, _> = [-1, 255, 255].try_into();
+        assert_eq!(c, Err(IntoColorError::IntConversion));
+    }
+    #[test]
+    fn test_array_correct() {
+        let c: Result<Color, _> = [183, 65, 14].try_into();
+        assert!(c.is_ok());
+        assert_eq!(
+            c.unwrap(),
+            Color {
+                red: 183,
+                green: 65,
+                blue: 14
+            }
+        );
+    }
+    #[test]
+    fn test_slice_out_of_range_positive() {
+        let arr = [10000, 256, 1000];
+        assert_eq!(
+            Color::try_from(&arr[..]),
+            Err(IntoColorError::IntConversion)
+        );
+    }
+    #[test]
+    fn test_slice_out_of_range_negative() {
+        let arr = [-256, -1, -10];
+        assert_eq!(
+            Color::try_from(&arr[..]),
+            Err(IntoColorError::IntConversion)
+        );
+    }
+    #[test]
+    fn test_slice_sum() {
+        let arr = [-1, 255, 255];
+        assert_eq!(
+            Color::try_from(&arr[..]),
+            Err(IntoColorError::IntConversion)
+        );
+    }
+    #[test]
+    fn test_slice_correct() {
+        let v = vec![183, 65, 14];
+        let c: Result<Color, _> = Color::try_from(&v[..]);
+        assert!(c.is_ok());
+        assert_eq!(
+            c.unwrap(),
+            Color {
+                red: 183,
+                green: 65,
+                blue: 14
+            }
+        );
+    }
+    #[test]
+    fn test_slice_excess_length() {
+        let v = vec![0, 0, 0, 0];
+        assert_eq!(Color::try_from(&v[..]), Err(IntoColorError::BadLen));
+    }
+    #[test]
+    fn test_slice_insufficient_length() {
+        let v = vec![0, 0];
+        assert_eq!(Color::try_from(&v[..]), Err(IntoColorError::BadLen));
+    }
 }

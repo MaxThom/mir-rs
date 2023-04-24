@@ -16,10 +16,11 @@ use thiserror::Error as ThisError;
 use tokio_amqp::*;
 use tokio_util::sync::CancellationToken;
 use chrono::Utc;
+use y::{Post};
+use y::clients::amqp::PostMQ;
 
-use crate::device::{
-    LiveDevice
-};
+
+use device::LiveDevice;
 
 mod device;
 
@@ -75,6 +76,11 @@ impl Settings {
 
 #[tokio::main]
 async fn main() {
+    let p = Post::new("caca", "pip");
+    p.print();
+    println!("{}", p.title);
+    let p = PostMQ::new("fire", "water");
+    println!("{}", p.title);
     let token = CancellationToken::new();
 
     let settings = Settings::new().unwrap();
