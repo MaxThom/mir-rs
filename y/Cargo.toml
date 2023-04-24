@@ -7,3 +7,9 @@ edition = "2021"
 
 [dependencies]
 serde = { version = "1.0.160", features = ["derive"] }
+lapin = "2.1.1"
+deadpool = "0.9.5"
+deadpool-lapin = "0.10.0"
+tokio = { version = "1.27.0", features = ["macros", "time", "rt-multi-thread", "signal"] }
+tokio-amqp = "2.0.0"
+brotli = "3.3.4"

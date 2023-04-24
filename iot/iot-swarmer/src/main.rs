@@ -5,7 +5,7 @@ use device::{Device};
 use fern::colors::{Color, ColoredLevelConfig};
 use lapin::options::{BasicPublishOptions, ExchangeDeclareOptions};
 use lapin::types::FieldTable;
-use lapin::{BasicProperties, ConnectionProperties};
+use lapin::{BasicProperties, ConnectionProperties, Channel};
 use log::{debug, error, info, trace};
 use serde::{Deserialize, Serialize};
 use tokio::time::{sleep, Duration};
@@ -17,7 +17,7 @@ use tokio_amqp::*;
 use tokio_util::sync::CancellationToken;
 use chrono::Utc;
 use y::{Post};
-use y::clients::amqp::PostMQ;
+use y::clients::amqp::{Amqp};
 
 
 use device::LiveDevice;
@@ -76,25 +76,32 @@ impl Settings {
 
 #[tokio::main]
 async fn main() {
-    let p = Post::new("caca", "pip");
-    p.print();
-    println!("{}", p.title);
-    let p = PostMQ::new("fire", "water");
-    println!("{}", p.title);
+    //let p = Post::new("caca", "pip");
+    //p.print();
+    //println!("{}", p.title);
+    //let p = PostMQ::new("fire", "water");
+    //println!("{}", p.title);
+
     let token = CancellationToken::new();
 
     let settings = Settings::new().unwrap();
     setup_logger(settings.log_level.clone()).unwrap();
+    info!("{:?}", settings);
 
+    info!("{:?}", settings);
     let manager = Manager::new(
         settings.amqp_addr.clone(),
         ConnectionProperties::default().with_tokio(),
     );
     let pool: Pool = Pool::builder(manager)
-        .max_size(10)
+        .max_size(20)
         .build()
         .expect("can create pool");
-    info!("{:?}", settings);
+    match create_exchange(pool.clone()).await {
+        Ok(()) => info!("exchange declared"),
+        Err(error) => error!("can't create exchange {}", error)
+    };
+    //let amqp = Amqp::new(settings.amqp_addr.clone(), 10);
 
     for device in settings.devices {
         for i in 0..device.count {
@@ -205,12 +212,6 @@ async fn send_message(payload: &str, pool: Pool) -> Result<&str, Error> {
         Err(error) => return Err(Error::RMQError(error)),
     };
 
-    channel.exchange_declare(
-        "iot",
-        lapin::ExchangeKind::Topic,
-        ExchangeDeclareOptions::default(),
-        FieldTable::default()).await?;
-
     // Set encoding type
     let headers = BasicProperties::default().with_content_encoding("br".into());
     match channel
@@ -242,3 +243,29 @@ async fn get_rmq_con(pool: Pool) -> Result<Object, Error> {
     Ok(connection)
 }
 
+async fn create_exchange(pool: Pool) -> Result<(), Error> {
+    // Get connection
+    let rmq_con = match get_rmq_con(pool).await.map_err(|e| {
+        eprintln!("can't connect to rmq, {}", e);
+        e
+    }) {
+        Ok(x) => x,
+        Err(error) => return Err(error),
+    };
+
+    let channel = match rmq_con.create_channel().await.map_err(|e| {
+        eprintln!("can't create channel, {}", e);
+        e
+    }) {
+        Ok(x) => x,
+        Err(error) => return Err(Error::RMQError(error)),
+    };
+
+    channel.exchange_declare(
+        "iot",
+        lapin::ExchangeKind::Topic,
+        ExchangeDeclareOptions::default(),
+        FieldTable::default()).await.unwrap();
+
+    Ok(())
+}

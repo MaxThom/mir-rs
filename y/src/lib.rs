@@ -1,5 +1,5 @@
 use serde::{Serialize, Deserialize};
-use clients::amqp::PostMQ;
+use clients::amqp::Amqp;
 
 pub mod clients;
 
@@ -15,10 +15,5 @@ impl Post {
             title: title.to_string(),
             body: body.to_string(),
         }
-    }
-
-    pub fn print(&self) {
-        let x = PostMQ::new("ca", "pi");
-        print!("{}", x.title);
     }
 }
