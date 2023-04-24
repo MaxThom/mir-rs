@@ -3,6 +3,7 @@
 members = [
     "iot/iot-flux",
     "iot/iot-swarmer",
+    "rabbitmq/rabbitmq-warp",
     "playground",
     "y",
 ]

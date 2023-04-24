@@ -1,22 +1,19 @@
-use brotli::CompressorWriter;
+
 use config::{Config, ConfigError, Environment, File};
-use deadpool_lapin::{Manager, Object, Pool, PoolError};
+use deadpool_lapin::{PoolError};
 use device::{Device};
 use fern::colors::{Color, ColoredLevelConfig};
-use lapin::options::{BasicPublishOptions, ExchangeDeclareOptions};
+use lapin::options::{ExchangeDeclareOptions};
 use lapin::types::FieldTable;
-use lapin::{BasicProperties, ConnectionProperties, Channel};
 use log::{debug, error, info, trace};
 use serde::{Deserialize, Serialize};
 use tokio::time::{sleep, Duration};
 
 use std::time::{SystemTime};
-use std::{collections::HashMap, io::Write};
+use std::{collections::HashMap};
 use thiserror::Error as ThisError;
-use tokio_amqp::*;
 use tokio_util::sync::CancellationToken;
 use chrono::Utc;
-use y::{Post};
 use y::clients::amqp::{Amqp};
 
 
@@ -71,49 +68,36 @@ impl Settings {
 // https://blog.logrocket.com/configuration-management-in-rust-web-services/
 // https://tokio.rs/tokio/topics/shutdown
 
-// TODO: Object recycling
-// TODO: AMQP connection pooling
-
 #[tokio::main]
 async fn main() {
-    //let p = Post::new("caca", "pip");
-    //p.print();
-    //println!("{}", p.title);
-    //let p = PostMQ::new("fire", "water");
-    //println!("{}", p.title);
-
     let token = CancellationToken::new();
 
     let settings = Settings::new().unwrap();
     setup_logger(settings.log_level.clone()).unwrap();
     info!("{:?}", settings);
 
-    info!("{:?}", settings);
-    let manager = Manager::new(
-        settings.amqp_addr.clone(),
-        ConnectionProperties::default().with_tokio(),
-    );
-    let pool: Pool = Pool::builder(manager)
-        .max_size(20)
-        .build()
-        .expect("can create pool");
-    match create_exchange(pool.clone()).await {
-        Ok(()) => info!("exchange declared"),
-        Err(error) => error!("can't create exchange {}", error)
+    let amqp = Amqp::new(settings.amqp_addr.clone(), 10);
+    match amqp.declare_exchange(
+        "iot",
+        lapin::ExchangeKind::Topic,
+        ExchangeDeclareOptions::default(),
+        FieldTable::default()
+    ).await {
+        Ok(()) => info!("topic exchange <iot> declared"),
+        Err(error) => error!("can't create topic exchange <iot> {}", error)
     };
-    //let amqp = Amqp::new(settings.amqp_addr.clone(), 10);
 
     for device in settings.devices {
         for i in 0..device.count {
             let y = device.clone();
             let cloned_token = token.clone();
-            let cloned_pool = pool.clone();
+            let cloned_amqp = amqp.clone();
             tokio::spawn(async move {
                 tokio::select! {
                     _ = cloned_token.cancelled() => {
                         debug!("The token was shutdown")
                     }
-                    _ = start_device(cloned_pool, i, y) => {
+                    _ = start_device(cloned_amqp, i, y) => {
                         debug!("device shuting down...");
                     }
                 }
@@ -165,12 +149,13 @@ fn setup_logger(log_level: String) -> Result<(), fern::InitError> {
     Ok(())
 }
 
-async fn start_device(pool: Pool, index: u32, template: Device)  {
+async fn start_device(amqp: Amqp, index: u32, template: Device)  {
     // Create virtual device
     let mut device = LiveDevice::from_template(&template, index).unwrap();
 
     // Loop
     loop {
+        // Generate
         let mut payload = DevicePayload::default();
         payload.device_id = device.name.clone();
         payload.timestamp = Utc::now().to_string();
@@ -179,93 +164,14 @@ async fn start_device(pool: Pool, index: u32, template: Device)  {
             payload.payload.insert(sensor.name.clone(), x);
         }
         info!("{:?}", payload);
+
+        // Serialize & Send
         let str_payload = serde_json::to_string(&payload).unwrap();
-        _ = send_message(&str_payload, pool.clone()).await;
+        match amqp.send_message(&str_payload, "iot", "swarm.telemetry.v1").await
+        {
+            Ok(_) => trace!("message sent"),
+            Err(error) => error!("can't send message {}", error)
+        };
         sleep(Duration::from_secs(template.send_interval_second.into())).await;
     }
-}
-
-async fn send_message(payload: &str, pool: Pool) -> Result<&str, Error> {
-    // Create message and compress using Brotli 10
-    let mut compressed_data = Vec::new();
-    {
-        let mut compressor = CompressorWriter::new(&mut compressed_data, 4096, 10, 22);
-        compressor.write_all(payload.as_bytes()).unwrap();
-    }
-    trace!("-> compressed {:?}, uncompressed {:?}", compressed_data.len(), payload.len());
-
-    // Get connection
-    let rmq_con = match get_rmq_con(pool).await.map_err(|e| {
-        eprintln!("can't connect to rmq, {}", e);
-        e
-    }) {
-        Ok(x) => x,
-        Err(error) => return Err(error),
-    };
-
-    // Create channel
-    let channel = match rmq_con.create_channel().await.map_err(|e| {
-        eprintln!("can't create channel, {}", e);
-        e
-    }) {
-        Ok(x) => x,
-        Err(error) => return Err(Error::RMQError(error)),
-    };
-
-    // Set encoding type
-    let headers = BasicProperties::default().with_content_encoding("br".into());
-    match channel
-        .basic_publish(
-            "iot",
-            "swarm.telemetry.v1",
-            BasicPublishOptions::default(),
-            &compressed_data,
-            headers,
-        )
-        .await
-        .map_err(|e| {
-            eprintln!("can't publish: {}", e);
-            e
-        })?
-        .await
-        .map_err(|e| {
-            eprintln!("can't publish: {}", e);
-            e
-        }) {
-        Ok(x) => x,
-        Err(error) => return Err(Error::RMQError(error)),
-    };
-    Ok("OK")
-}
-
-async fn get_rmq_con(pool: Pool) -> Result<Object, Error> {
-    let connection = pool.get().await?;
-    Ok(connection)
-}
-
-async fn create_exchange(pool: Pool) -> Result<(), Error> {
-    // Get connection
-    let rmq_con = match get_rmq_con(pool).await.map_err(|e| {
-        eprintln!("can't connect to rmq, {}", e);
-        e
-    }) {
-        Ok(x) => x,
-        Err(error) => return Err(error),
-    };
-
-    let channel = match rmq_con.create_channel().await.map_err(|e| {
-        eprintln!("can't create channel, {}", e);
-        e
-    }) {
-        Ok(x) => x,
-        Err(error) => return Err(Error::RMQError(error)),
-    };
-
-    channel.exchange_declare(
-        "iot",
-        lapin::ExchangeKind::Topic,
-        ExchangeDeclareOptions::default(),
-        FieldTable::default()).await.unwrap();
-
-    Ok(())
 }
