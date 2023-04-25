@@ -1,20 +1,19 @@
 
 use config::{Config, ConfigError, Environment, File};
-use deadpool_lapin::{PoolError};
 use device::{Device};
 use fern::colors::{Color, ColoredLevelConfig};
 use lapin::options::{ExchangeDeclareOptions};
 use lapin::types::FieldTable;
 use log::{debug, error, info, trace};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize};
 use tokio::time::{sleep, Duration};
 
 use std::time::{SystemTime};
-use std::{collections::HashMap};
 use thiserror::Error as ThisError;
 use tokio_util::sync::CancellationToken;
 use chrono::Utc;
 use y::clients::amqp::{Amqp};
+use y::models::{DevicePayload};
 
 
 use device::LiveDevice;
@@ -24,27 +23,16 @@ mod device;
 //type RMQResult<T> = Result<T, PoolError>;
 
 //type Connection = deadpool::managed::Object<deadpool_lapin::Manager>;
-
 #[derive(ThisError, Debug)]
 enum Error {
-    #[error("rmq error: {0}")]
-    RMQError(#[from] lapin::Error),
-    #[error("rmq pool error: {0}")]
-    RMQPoolError(#[from] PoolError),
 }
+
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct Settings {
     pub devices: Vec<Device>,
     pub log_level: String,
     pub amqp_addr: String,
-}
-
-#[derive(Debug, Serialize, Clone, Default)]
-pub struct DevicePayload {
-    pub device_id: String,
-    pub timestamp: String,
-    pub payload: HashMap<String, f32>,
 }
 
 const CONFIG_FILE_PATH_DEFAULT: &str = "./config/swarmer.yaml";

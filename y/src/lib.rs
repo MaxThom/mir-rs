@@ -2,6 +2,7 @@ use serde::{Serialize, Deserialize};
 //use clients::amqp::Amqp;
 
 pub mod clients;
+pub mod models;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Post {
