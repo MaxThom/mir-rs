@@ -14,3 +14,7 @@ tokio = { version = "1.27.0", features = ["macros", "time", "rt-multi-thread", "
 tokio-amqp = "2.0.0"
 brotli = "3.3.4"
 thiserror = "1.0.40"
+config_sys = { version = "0.13.3", package = "config" }
+fern = { version = "0.6.2", features = ["colored"] }
+humantime = "2.1.0"
+log = "0.4.17"

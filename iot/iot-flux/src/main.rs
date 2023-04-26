@@ -1,6 +1,48 @@
-fn main() {
-    println!("Hello, world!");
+use config::{ConfigError, Config, File, Environment};
+use log::{debug, error, info, trace};
+use serde::Deserialize;
+use thiserror::Error as ThisError;
+use tokio_util::sync::CancellationToken;
+
+use y::clients::amqp::{Amqp};
+use y::models::DevicePayload;
+use y::utills::logger::setup_logger;
+use y::utills::config::{setup_config, FileFormat};
+
+#[derive(ThisError, Debug)]
+enum Error {
 }
+
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct Settings {
+    pub log_level: String,
+    pub amqp_addr: String,
+}
+
+const APP_NAME: &str = "flux";
+
+#[tokio::main]
+async fn main() {
+    let token = CancellationToken::new();
+
+    let settings: Settings = setup_config(APP_NAME, FileFormat::YAML).unwrap();
+    setup_logger(settings.log_level.clone()).unwrap();
+    info!("{:?}", settings);
+
+    match tokio::signal::ctrl_c().await {
+        Ok(()) => {
+            info!("Shutting down...");
+            token.cancel();
+        }
+        Err(err) => {
+            eprintln!("Unable to listen for shutdown signal: {}", err);
+        }
+    }
+    info!("Shutdown complete.");
+}
+
+
 //
 //use lapin::{
 //    options::*,

@@ -3,6 +3,7 @@ use serde::{Serialize, Deserialize};
 
 pub mod clients;
 pub mod models;
+pub mod utills;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Post {

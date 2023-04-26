@@ -28,6 +28,7 @@ pub struct Amqp {
 }
 
 impl Amqp {
+    #[allow(deprecated)]
     pub fn new(url: String, pool_max_size: usize) -> Self {
         let manager = Manager::new(
             url,

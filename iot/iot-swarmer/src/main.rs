@@ -1,32 +1,27 @@
 
-use config::{Config, ConfigError, Environment, File};
+use chrono::Utc;
 use device::{Device};
-use fern::colors::{Color, ColoredLevelConfig};
 use lapin::options::{ExchangeDeclareOptions};
 use lapin::types::FieldTable;
 use log::{debug, error, info, trace};
 use serde::{Deserialize};
 use tokio::time::{sleep, Duration};
-
-use std::time::{SystemTime};
 use thiserror::Error as ThisError;
 use tokio_util::sync::CancellationToken;
-use chrono::Utc;
+
 use y::clients::amqp::{Amqp};
-use y::models::{DevicePayload};
+use y::models::DevicePayload;
+use y::utills::logger::setup_logger;
+use y::utills::config::{setup_config, FileFormat};
 
 
 use device::LiveDevice;
 
 mod device;
 
-//type RMQResult<T> = Result<T, PoolError>;
-
-//type Connection = deadpool::managed::Object<deadpool_lapin::Manager>;
 #[derive(ThisError, Debug)]
 enum Error {
 }
-
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct Settings {
@@ -35,32 +30,16 @@ pub struct Settings {
     pub amqp_addr: String,
 }
 
-const CONFIG_FILE_PATH_DEFAULT: &str = "./config/swarmer.yaml";
-const CONFIG_FILE_PATH_LOCAL: &str = "./config/local_swarmer.yaml";
-// This makes it so "SWARMER_DEVICES__0__NAME overrides devices[0].name
-const CONFIG_ENV_PREFIX: &str = "SWARMER";
-const CONFIG_ENV_SEPARATOR: &str = "__";
-
-impl Settings {
-    pub fn new() -> Result<Self, ConfigError> {
-        let s = Config::builder()
-            .add_source(File::with_name(CONFIG_FILE_PATH_DEFAULT))
-            .add_source(File::with_name(CONFIG_FILE_PATH_LOCAL))
-            .add_source(Environment::with_prefix(CONFIG_ENV_PREFIX).separator(CONFIG_ENV_SEPARATOR))
-            .build()
-            .unwrap();
-        s.try_deserialize::<Self>()
-    }
-}
-
 // https://blog.logrocket.com/configuration-management-in-rust-web-services/
 // https://tokio.rs/tokio/topics/shutdown
+
+const APP_NAME: &str = "swarmer";
 
 #[tokio::main]
 async fn main() {
     let token = CancellationToken::new();
 
-    let settings = Settings::new().unwrap();
+    let settings: Settings = setup_config(APP_NAME, FileFormat::YAML).unwrap();
     setup_logger(settings.log_level.clone()).unwrap();
     info!("{:?}", settings);
 
@@ -103,38 +82,6 @@ async fn main() {
         }
     }
     info!("Shutdown complete.");
-}
-
-fn setup_logger(log_level: String) -> Result<(), fern::InitError> {
-    let level = match log_level.to_lowercase().trim() {
-        "trace" => log::LevelFilter::Trace,
-        "debug" => log::LevelFilter::Debug,
-        "info" => log::LevelFilter::Info,
-        "warn" => log::LevelFilter::Warn,
-        "error" => log::LevelFilter::Error,
-        _ => log::LevelFilter::Info,
-    };
-
-    let colors = ColoredLevelConfig::new()
-        .info(Color::Green)
-        .debug(Color::Cyan)
-        .trace(Color::Magenta);
-
-    fern::Dispatch::new()
-        .format(move |out, message, record| {
-            out.finish(format_args!(
-                "[{} {} {}] {}",
-                humantime::format_rfc3339_seconds(SystemTime::now()),
-                colors.color(record.level()),
-                record.target(),
-                message
-            ))
-        })
-        .level(level)
-        .chain(std::io::stdout())
-        //.chain(fern::log_file("output.log")?)
-        .apply()?;
-    Ok(())
 }
 
 async fn start_device(amqp: Amqp, index: u32, template: Device)  {
