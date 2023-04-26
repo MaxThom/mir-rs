@@ -2,7 +2,7 @@ log_level: "info" # [Off|Error|Warn|Info|Debug|Trace]
 amqp_addr: "unset"
 devices:
   - name: "weather" # suffix name with -XXX
-    count: 10
+    count: 3
     send_interval_second: "2"
     sensors:
     - name: "temperature"
