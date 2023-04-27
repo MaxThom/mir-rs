@@ -22,6 +22,7 @@ enum Error {
 pub struct Settings {
     pub log_level: String,
     pub amqp_addr: String,
+    pub thread_count: usize,
 }
 
 const APP_NAME: &str = "flux";
@@ -38,9 +39,38 @@ async fn main() {
     info!("{:?}", settings);
 
 
-    let amqp: Amqp = Amqp::new(settings.amqp_addr.clone(), 1);
-    let channel = &amqp.get_channel().await.unwrap();
+    let amqp: Amqp = Amqp::new(settings.amqp_addr.clone(), 10);
 
+    for i in 0..settings.thread_count {
+        let cloned_token = token.clone();
+        let cloned_amqp = amqp.clone();
+        tokio::spawn(async move {
+            tokio::select! {
+                _ = cloned_token.cancelled() => {
+                    debug!("The token was shutdown")
+                }
+                _ = start_consuming_topic_queue(i, cloned_amqp) => {
+                    debug!("device shuting down...");
+                }
+            }
+        });
+    }
+
+    match tokio::signal::ctrl_c().await {
+        Ok(()) => {
+            info!("Shutting down...");
+            token.cancel();
+        }
+        Err(err) => {
+            eprintln!("Unable to listen for shutdown signal: {}", err);
+        }
+    }
+    info!("Shutdown complete.");
+}
+
+
+async fn start_consuming_topic_queue(index: usize, amqp: Amqp) {
+    let channel = &amqp.get_channel().await.unwrap();
     match amqp.declare_exchange_with_channel(
         channel,
         RMQ_EXCHANGE_NAME,
@@ -48,8 +78,8 @@ async fn main() {
         ExchangeDeclareOptions::default(),
         FieldTable::default()
     ).await {
-        Ok(()) => info!("topic exchange <{}> declared", RMQ_EXCHANGE_NAME),
-        Err(error) => error!("can't create topic exchange <{}> {}", RMQ_EXCHANGE_NAME, error)
+        Ok(()) => info!("{}: topic exchange <{}> declared", index, RMQ_EXCHANGE_NAME),
+        Err(error) => error!("{}: can't create topic exchange <{}> {}", index, RMQ_EXCHANGE_NAME, error)
     };
     let queue = match amqp.declare_queue_with_channel(
         channel,
@@ -58,11 +88,11 @@ async fn main() {
         FieldTable::default(),
     ).await {
         Ok(queue) => {
-            info!("metrics queue <{}> declared", queue.name());
+            info!("{}: metrics queue <{}> declared", index, queue.name());
             queue
     },
         Err(error) => {
-            error!("can't create metrics queue <{}> {}", RMQ_QUEUE_NAME, error);
+            error!("{}: can't create metrics queue <{}> {}", index, RMQ_QUEUE_NAME, error);
             panic!("{}", error)
     }
     };
@@ -75,9 +105,9 @@ async fn main() {
         QueueBindOptions::default(),
         FieldTable::default(),
     ).await {
-        Ok(()) => info!("topic exchange <{}> and metric queue <{}> binded", RMQ_EXCHANGE_NAME, queue.name()),
+        Ok(()) => info!("{}: topic exchange <{}> and metric queue <{}> binded", index, RMQ_EXCHANGE_NAME, queue.name()),
         Err(error) => {
-            error!("can't create binding <{}> <{}> {}", RMQ_EXCHANGE_NAME, RMQ_QUEUE_NAME, error);
+            error!("{}: can't create binding <{}> <{}> {}", index, RMQ_EXCHANGE_NAME, RMQ_QUEUE_NAME, error);
             panic!("{}", error)}
     };
 
@@ -89,17 +119,17 @@ async fn main() {
         FieldTable::default(),
     ).await {
         Ok(consumer) => {
-            info!("consumer <{}> declared", consumer.tag());
-            info!("consumer <{}> to queue <{}> binded", consumer.tag(), queue.name());
+            info!("{}: consumer <{}> declared", index, consumer.tag());
+            info!("{}: consumer <{}> to queue <{}> binded", index, consumer.tag(), queue.name());
             consumer
         },
         Err(error) => {
-            error!("can't bind consumer and queue <{}> {}", queue.name(), error);
+            error!("{}: can't bind consumer and queue <{}> {}", index, queue.name(), error);
             panic!("{}", error)
         }
     };
 
-    info!("consumer <{}> is liscening", consumer.tag());
+    info!("{}: consumer <{}> is liscening", index, consumer.tag());
     while let Some(delivery) = consumer.next().await {
         if let Ok(delivery) = delivery {
             let payload: Vec<u8> = delivery.data.clone();
@@ -113,22 +143,11 @@ async fn main() {
             }.unwrap();
 
             let device_payload: DevicePayload = serde_json::from_str(&uncompressed_message).unwrap();
-            debug!("{:?}", device_payload);
+            debug!("{}: {:?}", index, device_payload);
             match channel.basic_ack(delivery.delivery_tag, BasicAckOptions::default()).await {
-                Ok(()) => trace!("acknowledged message <{}>", delivery.delivery_tag),
-                Err(error) => error!("can't acknowledge message <{}> {}", delivery.delivery_tag, error)
+                Ok(()) => trace!("{}: acknowledged message <{}>", index, delivery.delivery_tag),
+                Err(error) => error!("{}: can't acknowledge message <{}> {}", index, delivery.delivery_tag, error)
             };
         };
     }
-
-    match tokio::signal::ctrl_c().await {
-        Ok(()) => {
-            info!("Shutting down...");
-            token.cancel();
-        }
-        Err(err) => {
-            eprintln!("Unable to listen for shutdown signal: {}", err);
-        }
-    }
-    info!("Shutdown complete.");
 }
