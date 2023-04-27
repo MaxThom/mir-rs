@@ -93,6 +93,14 @@ impl Amqp {
             arguments).await.unwrap())
     }
 
+    pub async fn declare_exchange_with_channel(&self, channel: &Channel, exchange: &str, kind: ExchangeKind, options: ExchangeDeclareOptions, arguments: FieldTable) -> Result<(), AmqpError> {
+        Ok(channel.exchange_declare(
+            exchange,
+            kind,
+            options,
+            arguments).await.unwrap())
+    }
+
     pub async fn declare_queue(&self, queue: &str, options: lapin::options::QueueDeclareOptions, arguments: FieldTable) -> Result<Queue, AmqpError> {
         let channel = self.get_channel().await?;
         Ok(channel.queue_declare(
@@ -101,8 +109,24 @@ impl Amqp {
             arguments).await.unwrap())
     }
 
+    pub async fn declare_queue_with_channel(&self, channel: &Channel, queue: &str, options: lapin::options::QueueDeclareOptions, arguments: FieldTable) -> Result<Queue, AmqpError> {
+        Ok(channel.queue_declare(
+            queue,
+            options,
+            arguments).await.unwrap())
+    }
+
     pub async fn bind_queue(&self, queue: &str, exchange: &str, routing_key: &str, options: QueueBindOptions, arguments: FieldTable) -> Result<(), AmqpError> {
         let channel = self.get_channel().await?;
+        Ok(channel.queue_bind(
+            queue,
+            exchange,
+            routing_key,
+            options,
+            arguments).await.unwrap())
+    }
+
+    pub async fn bind_queue_with_channel(&self, channel: &Channel, queue: &str, exchange: &str, routing_key: &str, options: QueueBindOptions, arguments: FieldTable) -> Result<(), AmqpError> {
         Ok(channel.queue_bind(
             queue,
             exchange,
@@ -120,27 +144,20 @@ impl Amqp {
             arguments).await.unwrap())
     }
 
+    pub async fn create_consumer_with_channel(&self, channel: &Channel, queue: &str, consumer_tag: &str, options: BasicConsumeOptions, arguments: FieldTable) -> Result<Consumer, AmqpError> {
+        Ok(channel.basic_consume(
+            queue,
+            consumer_tag,
+            options,
+            arguments).await.unwrap())
+    }
+
     pub async fn send_message(&self, payload: &str, exchange: &str, routing_key: &str) -> Result<&str, AmqpError> {
         // Create message and compress using Brotli 10
         let compressed_payload = self.compress_message(payload)?;
 
-        // Get connection
-        let rmq_con = match self.get_connection().await.map_err(|e| {
-            eprintln!("can't connect to rmq, {}", e);
-            e
-        }) {
-            Ok(x) => x,
-            Err(error) => return Err(error),
-        };
-
-        // Create channel
-        let channel = match rmq_con.create_channel().await.map_err(|e| {
-            eprintln!("can't create channel, {}", e);
-            e
-        }) {
-            Ok(x) => x,
-            Err(error) => return Err(AmqpError::RMQError(error)),
-        };
+        // Get channel
+        let channel = self.get_channel().await?;
 
         // Set encoding type
         let headers = BasicProperties::default().with_content_encoding("br".into());
@@ -167,4 +184,35 @@ impl Amqp {
         };
         Ok("OK")
     }
+
+    pub async fn send_message_with_channel(&self, channel: &Channel, payload: &str, exchange: &str, routing_key: &str) -> Result<&str, AmqpError> {
+        // Create message and compress using Brotli 10
+        let compressed_payload = self.compress_message(payload)?;
+
+        // Set encoding type
+        let headers = BasicProperties::default().with_content_encoding("br".into());
+        match channel
+            .basic_publish(
+                exchange,
+                routing_key,
+                BasicPublishOptions::default(),
+                &compressed_payload,
+                headers,
+            )
+            .await
+            .map_err(|e| {
+                eprintln!("can't publish: {}", e);
+                e
+            })?
+            .await
+            .map_err(|e| {
+                eprintln!("can't publish: {}", e);
+                e
+            }) {
+            Ok(x) => x,
+            Err(error) => return Err(AmqpError::RMQError(error)),
+        };
+        Ok("OK")
+    }
+
 }

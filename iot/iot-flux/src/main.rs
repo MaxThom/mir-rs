@@ -1,6 +1,6 @@
 
 use futures::StreamExt;
-use log::{error, info, };
+use log::{error, info, trace, debug, };
 use lapin::types::ShortString;
 use lapin::{options::*, types::FieldTable};
 use serde::Deserialize;
@@ -8,7 +8,7 @@ use thiserror::Error as ThisError;
 use tokio_util::sync::CancellationToken;
 
 
-use y::clients::amqp::{Amqp, AmqpError};
+use y::clients::amqp::{Amqp};
 use y::models::DevicePayload;
 use y::utills::logger::setup_logger;
 use y::utills::config::{setup_config, FileFormat};
@@ -38,9 +38,11 @@ async fn main() {
     info!("{:?}", settings);
 
 
-    let amqp = Amqp::new(settings.amqp_addr.clone(), 1);
+    let amqp: Amqp = Amqp::new(settings.amqp_addr.clone(), 1);
+    let channel = &amqp.get_channel().await.unwrap();
 
-    match amqp.declare_exchange(
+    match amqp.declare_exchange_with_channel(
+        channel,
         RMQ_EXCHANGE_NAME,
         lapin::ExchangeKind::Topic,
         ExchangeDeclareOptions::default(),
@@ -49,7 +51,8 @@ async fn main() {
         Ok(()) => info!("topic exchange <{}> declared", RMQ_EXCHANGE_NAME),
         Err(error) => error!("can't create topic exchange <{}> {}", RMQ_EXCHANGE_NAME, error)
     };
-    let queue = match amqp.declare_queue(
+    let queue = match amqp.declare_queue_with_channel(
+        channel,
         RMQ_QUEUE_NAME,
         QueueDeclareOptions::default(),
         FieldTable::default(),
@@ -64,7 +67,8 @@ async fn main() {
     }
     };
 
-    match amqp.bind_queue(
+    match amqp.bind_queue_with_channel(
+        channel,
         queue.name().as_str(),
         RMQ_EXCHANGE_NAME,
         "#.telemetry.v1",
@@ -77,7 +81,8 @@ async fn main() {
             panic!("{}", error)}
     };
 
-    let mut consumer = match amqp.create_consumer(
+    let mut consumer = match amqp.create_consumer_with_channel(
+        channel,
         RMQ_QUEUE_NAME,
         "",
         BasicConsumeOptions::default(),
@@ -94,22 +99,6 @@ async fn main() {
         }
     };
 
-    let conn = match amqp.get_connection().await {
-        Ok(channel) => channel,
-        Err(error) => {
-            error!("can't get connection {}", error);
-            panic!("{}", error)
-        }
-    };
-
-    let channel = match conn.create_channel().await.map_err(|e| {
-        eprintln!("can't create channel, {}", e);
-        e
-    }) {
-        Ok(x) => x,
-        Err(error) => panic!("{}", error),
-    };
-
     info!("consumer <{}> is liscening", consumer.tag());
     while let Some(delivery) = consumer.next().await {
         if let Ok(delivery) = delivery {
@@ -124,9 +113,9 @@ async fn main() {
             }.unwrap();
 
             let device_payload: DevicePayload = serde_json::from_str(&uncompressed_message).unwrap();
-            info!("{:?}", device_payload);
+            debug!("{:?}", device_payload);
             match channel.basic_ack(delivery.delivery_tag, BasicAckOptions::default()).await {
-                Ok(()) => info!("acknowledged message <{}>", delivery.delivery_tag),
+                Ok(()) => trace!("acknowledged message <{}>", delivery.delivery_tag),
                 Err(error) => error!("can't acknowledge message <{}> {}", delivery.delivery_tag, error)
             };
         };
