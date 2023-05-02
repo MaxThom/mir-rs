@@ -28,7 +28,11 @@ pub struct Settings {
 const APP_NAME: &str = "flux";
 const RMQ_EXCHANGE_NAME: &str = "iot";
 const RMQ_QUEUE_NAME: &str = "iot-q-metrics";
+const RMQ_PREFETCH_COUNT: u16 = 10;
 
+// https://www.cloudamqp.com/blog/part1-rabbitmq-best-practice.html
+// https://github.com/infosechoudini/influxdb-rs
+// https://github.com/influxdata/influxdb_iox
 
 #[tokio::main]
 async fn main() {
@@ -39,7 +43,7 @@ async fn main() {
     info!("{:?}", settings);
 
 
-    let amqp: Amqp = Amqp::new(settings.amqp_addr.clone(), 10);
+    let amqp: Amqp = Amqp::new(settings.amqp_addr.clone(), settings.thread_count);
 
     for i in 0..settings.thread_count {
         let cloned_token = token.clone();
@@ -70,7 +74,9 @@ async fn main() {
 
 
 async fn start_consuming_topic_queue(index: usize, amqp: Amqp) {
+    // Get channel and declare topic, queue, binding and consumer
     let channel = &amqp.get_channel().await.unwrap();
+    channel.basic_qos(RMQ_PREFETCH_COUNT, BasicQosOptions::default()).await.unwrap();
     match amqp.declare_exchange_with_channel(
         channel,
         RMQ_EXCHANGE_NAME,
@@ -129,6 +135,7 @@ async fn start_consuming_topic_queue(index: usize, amqp: Amqp) {
         }
     };
 
+    // Consumer liscening to topic queue exchange
     info!("{}: consumer <{}> is liscening", index, consumer.tag());
     while let Some(delivery) = consumer.next().await {
         if let Ok(delivery) = delivery {

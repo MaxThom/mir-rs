@@ -7,6 +7,7 @@ pub fn setup_logger(log_level: String) -> Result<(), fern::InitError> {
         "debug" => log::LevelFilter::Debug,
         "info" => log::LevelFilter::Info,
         "warn" => log::LevelFilter::Warn,
+        "warning" => log::LevelFilter::Warn,
         "error" => log::LevelFilter::Error,
         _ => log::LevelFilter::Info,
     };

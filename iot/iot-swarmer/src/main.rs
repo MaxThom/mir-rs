@@ -28,6 +28,7 @@ pub struct Settings {
     pub devices: Vec<Device>,
     pub log_level: String,
     pub amqp_addr: String,
+    pub amqp_conn_count: usize,
 }
 
 // https://blog.logrocket.com/configuration-management-in-rust-web-services/
@@ -43,7 +44,7 @@ async fn main() {
     setup_logger(settings.log_level.clone()).unwrap();
     info!("{:?}", settings);
 
-    let amqp = Amqp::new(settings.amqp_addr.clone(), 10);
+    let amqp = Amqp::new(settings.amqp_addr.clone(), settings.amqp_conn_count);
     match amqp.declare_exchange(
         "iot",
         lapin::ExchangeKind::Topic,
