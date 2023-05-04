@@ -40,7 +40,6 @@ CREATE TABLE Sensor (
 );
 
 CREATE TABLE Datapoint (
-  telemetry_id LONG,
   device_id LONG,
   sensor_id LONG,
   timestamp TIMESTAMP,

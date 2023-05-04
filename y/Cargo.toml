@@ -18,3 +18,4 @@ config_sys = { version = "0.13.3", package = "config" }
 fern = { version = "0.6.2", features = ["colored"] }
 humantime = "2.1.0"
 log = "0.4.17"
+chrono = "0.4.24"

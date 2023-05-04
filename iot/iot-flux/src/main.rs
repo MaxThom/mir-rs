@@ -1,8 +1,10 @@
 
+use std::num::ParseIntError;
 use futures::StreamExt;
 use log::{error, info, trace, debug, };
 use lapin::types::ShortString;
 use lapin::{options::*, types::FieldTable};
+use questdb::ingress::{SenderBuilder, Buffer, Sender, TimestampNanos};
 use serde::Deserialize;
 use thiserror::Error as ThisError;
 use tokio_util::sync::CancellationToken;
@@ -15,6 +17,12 @@ use y::utills::config::{setup_config, FileFormat};
 
 #[derive(ThisError, Debug)]
 enum Error {
+    #[error("rmq pool error: {0}")]
+    ParseIntError(#[from] ParseIntError),
+    #[error("put host error: {0}")]
+    PutHostError(#[from] questdb::Error),
+    //#[error("unknown flux error")]
+    //Unknown,
 }
 
 
@@ -22,6 +30,7 @@ enum Error {
 pub struct Settings {
     pub log_level: String,
     pub amqp_addr: String,
+    pub questdb_addr: String,
     pub thread_count: usize,
 }
 
@@ -44,16 +53,20 @@ async fn main() {
 
 
     let amqp: Amqp = Amqp::new(settings.amqp_addr.clone(), settings.thread_count);
+    let host_port = parse_host_port(settings.questdb_addr.as_str()).unwrap();
 
     for i in 0..settings.thread_count {
         let cloned_token = token.clone();
         let cloned_amqp = amqp.clone();
+        let mut sender = SenderBuilder::new(host_port.0.clone(), host_port.1.clone()).connect().unwrap();
         tokio::spawn(async move {
             tokio::select! {
                 _ = cloned_token.cancelled() => {
                     debug!("The token was shutdown")
                 }
-                _ = start_consuming_topic_queue(i, cloned_amqp) => {
+                _ = start_consuming_topic_queue(i, cloned_amqp,  move |payload| {
+                    push_to_puthost(&mut sender, payload)
+                }) => {
                     debug!("device shuting down...");
                 }
             }
@@ -73,7 +86,8 @@ async fn main() {
 }
 
 
-async fn start_consuming_topic_queue(index: usize, amqp: Amqp) {
+async fn start_consuming_topic_queue(index: usize, amqp: Amqp, mut callback: impl FnMut(DevicePayload) -> Result<(), Error>) {
+    // TODO: Could implement better TCP Connection and Ch
     // Get channel and declare topic, queue, binding and consumer
     let channel = &amqp.get_channel().await.unwrap();
     channel.basic_qos(RMQ_PREFETCH_COUNT, BasicQosOptions::default()).await.unwrap();
@@ -151,10 +165,38 @@ async fn start_consuming_topic_queue(index: usize, amqp: Amqp) {
 
             let device_payload: DevicePayload = serde_json::from_str(&uncompressed_message).unwrap();
             debug!("{}: {:?}", index, device_payload);
+            callback(device_payload).unwrap();
             match channel.basic_ack(delivery.delivery_tag, BasicAckOptions::default()).await {
                 Ok(()) => trace!("{}: acknowledged message <{}>", index, delivery.delivery_tag),
                 Err(error) => error!("{}: can't acknowledge message <{}> {}", index, delivery.delivery_tag, error)
             };
         };
     }
+}
+
+fn push_to_puthost(sender: &mut Sender, payload: DevicePayload) -> Result<(), Error> {
+    let mut buffer = Buffer::new();
+    let timestamp = payload.timestamp;
+    let device_id = payload.device_id;
+    for sensor in payload.payload {
+        let sensor_id = sensor.0;
+        let value = sensor.1;
+        buffer
+            .table("Datapoint")?
+            .column_i64("device_id", device_id)?
+            .column_i64("sensor_id", sensor_id)?
+            .column_f64("value", value)?
+            .at(TimestampNanos::new(timestamp).unwrap())?;
+    }
+    sender.flush(&mut buffer)?;
+
+    Ok(())
+}
+
+fn parse_host_port(host: &str) -> Result<(String, u16), Error> {
+    let mut parts = host.split(':');
+    let host = parts.next().unwrap_or("");
+    let port = parts.next().unwrap_or("");
+    let port = port.parse::<u16>()?;
+    Ok((host.to_string(), port))
 }

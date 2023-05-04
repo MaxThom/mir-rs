@@ -1,5 +1,5 @@
 
-use chrono::Utc;
+use chrono::{Utc};
 use device::{Device};
 use lapin::options::{ExchangeDeclareOptions};
 use lapin::types::FieldTable;
@@ -55,6 +55,7 @@ async fn main() {
         Err(error) => error!("can't create topic exchange <iot> {}", error)
     };
 
+    let mut global_index = 0;
     for device in settings.devices {
         for i in 0..device.count {
             let y = device.clone();
@@ -65,11 +66,12 @@ async fn main() {
                     _ = cloned_token.cancelled() => {
                         debug!("The token was shutdown")
                     }
-                    _ = start_device(cloned_amqp, i, y) => {
+                    _ = start_device(cloned_amqp, i, global_index, y) => {
                         debug!("device shuting down...");
                     }
                 }
             });
+            global_index += 1;
         }
     }
 
@@ -85,19 +87,20 @@ async fn main() {
     info!("Shutdown complete.");
 }
 
-async fn start_device(amqp: Amqp, index: u32, template: Device)  {
+async fn start_device(amqp: Amqp, index: u32, global_index: i64, template: Device)  {
     // Create virtual device
-    let mut device = LiveDevice::from_template(&template, index).unwrap();
+    let mut device = LiveDevice::from_template(&template, index, global_index).unwrap();
 
     // Loop
     loop {
         // Generate
         let mut payload = DevicePayload::default();
-        payload.device_id = device.name.clone();
-        payload.timestamp = Utc::now().to_string();
+        payload.device_id = device.id.clone();
+        //payload.timestamp = Utc::now().to_string();
+        payload.timestamp = Utc::now().timestamp_nanos();
         for sensor in &mut device.sensors {
             let x = sensor.telemetry.next_datapoint();
-            payload.payload.insert(sensor.name.clone(), x);
+            payload.payload.insert(sensor.id.clone(), x);
         }
         info!("{:?}", payload);
 

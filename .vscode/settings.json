@@ -1,7 +1,7 @@
 {
     "sarif-viewer.connectToGithubCodeScanning": "off",
     "rust-analyzer.linkedProjects": [
-        "./iot/iot-flex/Cargo.toml",
+        "./iot/iot-flux/Cargo.toml",
         "./iot/iot-swarmer/Cargo.toml",
         "./iot/iot-oxi/Cargo.toml",
         "./y/Cargo.toml",

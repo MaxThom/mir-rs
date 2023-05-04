@@ -3,7 +3,7 @@
 
 RabbitMQ will be used to move telemetry around.
 
-It willbe configured as topics with the following pattern.
+It will be configured as topics with the following pattern.
 
 <device_type>.<telemetry_type>.<version_type>
 

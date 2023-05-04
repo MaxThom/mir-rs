@@ -3,31 +3,35 @@ amqp_addr: "unset"
 amqp_conn_count: 10
 devices:
   - name: "weather" # suffix name with -XXX
-    count: 1000
+    count: 2
     send_interval_second: "2"
     sensors:
-    - name: "temperature"
+    - id: 0
+      name: "temperature"
       hysteresis: "0.0"
-      pattern_name: "real"
+      pattern_name: "pyramid"
       pattern_args:
         constant: 5 # for linear
         min: 0 # for pyramid|wave
-        max: 10  # for pyramid|wave
-        rate: 1
-    - name: "air_quality"
+        max: 30  # for pyramid|wave
+        rate: 2
+    - id: 1
+      name: "air_quality"
       hysteresis: "0.0"
       pattern_name: "linear" # --------
       pattern_args:
         constant: 5
         rate: 1
-    - name: "humidity"
+    - id: 2
+      name: "humidity"
       hysteresis: "0.0"
       pattern_name: "pyramid" # /\/\/\/\
       pattern_args:
         rate: 1
         min: 80
         max: 100
-    - name: "pressure"
+    - id: 3
+      name: "pressure"
       hysteresis: "0.0"
       pattern_name: "wave" # ////////
       pattern_args:
@@ -38,7 +42,8 @@ devices:
     count: 0
     send_interval_second: "2"
     sensors:
-    - name: "temperature"
+    - id: 0
+      name: "temperature"
       hysteresis: "0.0"
       pattern_name: "pyramid"
       pattern_args:
