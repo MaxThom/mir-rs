@@ -1,4 +1,4 @@
 log_level: "info" # [Off|Error|Warn|Info|Debug|Trace]
 amqp_addr: "unset"
 questdb_addr: "unset"
-thread_count: "1"
+thread_count: "3"

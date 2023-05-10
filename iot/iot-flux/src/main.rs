@@ -172,6 +172,7 @@ async fn start_consuming_topic_queue(index: usize, amqp: Amqp, mut callback: imp
             };
         };
     }
+    debug!("{}: Shutting down...", index);
 }
 
 fn push_to_puthost(sender: &mut Sender, payload: DevicePayload) -> Result<(), Error> {
