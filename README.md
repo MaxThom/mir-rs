@@ -1,2 +1,2 @@
 # mir
-Exploring Rust &amp; Apache Arrow to create a IoT platform.
+Exploring Rust &amp; To create a IoT platform.
