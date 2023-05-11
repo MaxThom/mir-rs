@@ -1,0 +1,10 @@
+log_level: "info" # [Off|Error|Warn|Info|Debug|Trace]
+amqp_addr: "unset"
+surrealdb:
+  addr: "localhost:80"
+  user: ""
+  password: ""
+
+thread_count:
+  meta_queue: "1"
+  reported_queue: "1"

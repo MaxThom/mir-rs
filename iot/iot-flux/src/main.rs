@@ -14,6 +14,7 @@ use y::clients::amqp::{Amqp};
 use y::models::DevicePayload;
 use y::utills::logger::setup_logger;
 use y::utills::config::{setup_config, FileFormat};
+use y::utills::network;
 
 #[derive(ThisError, Debug)]
 enum Error {
@@ -53,7 +54,7 @@ async fn main() {
 
 
     let amqp: Amqp = Amqp::new(settings.amqp_addr.clone(), settings.thread_count);
-    let host_port = parse_host_port(settings.questdb_addr.as_str()).unwrap();
+    let host_port = network::parse_host_port(settings.questdb_addr.as_str()).unwrap();
 
     for i in 0..settings.thread_count {
         let cloned_token = token.clone();
