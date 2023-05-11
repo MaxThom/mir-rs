@@ -70,7 +70,7 @@ https://learn.microsoft.com/en-us/azure/iot-hub/iot-hub-devguide-device-twins
     "lastActivityTime": "2015-02-30T16:24:48.789Z",
     "cloudToDeviceMessageCount": 0,
     "version": 2,
-    "tags": {
+    "tags": { 
         "deploymentLocation": {
             "building": "43",
             "floor": "1"

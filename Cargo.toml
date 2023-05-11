@@ -4,6 +4,7 @@ members = [
     "iot/iot-flux",
     "iot/iot-swarmer",
     "iot/iot-oxi",
+    "iot/iot-redox",
     "rabbitmq/rabbitmq-warp",
     "playground",
     "y",

@@ -69,6 +69,8 @@ graph LR;
     M-->F{Flux}
     D{Device}-->TR(Twin Reported)
     TR-->F{Flux}
+    D{Device}-->TM(Twin Meta)
+    TM-->F{Flux}
     F-->TD(Twin Desired)
     TD-->D{Device}
     F-->C(Commands)
