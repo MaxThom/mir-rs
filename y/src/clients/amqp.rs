@@ -1,12 +1,17 @@
 
-use std::{io::{Write, Read}, string::FromUtf8Error};
+use std::{io::{Write, Read}, string::FromUtf8Error, error::Error};
 
 use brotli::{CompressorWriter, Decompressor};
 use deadpool_lapin::{Pool, Manager, PoolError, Object};
-use lapin::{BasicProperties, ConnectionProperties, options::{ExchangeDeclareOptions, BasicPublishOptions, QueueBindOptions, BasicConsumeOptions}, ExchangeKind, Queue, Channel, Consumer};
+use lapin::{BasicProperties, ConnectionProperties, options::{ExchangeDeclareOptions, BasicPublishOptions, QueueBindOptions, BasicConsumeOptions, BasicQosOptions, QueueDeclareOptions, BasicAckOptions, BasicNackOptions}, ExchangeKind, Queue, Channel, Consumer, types::{ShortUInt, ShortString}};
+use log::{info, error, trace, debug};
+use serde::Deserialize;
 use tokio_amqp::*;
 use lapin::types::FieldTable;
 use thiserror::Error as ThisError;
+use futures::StreamExt;
+
+use crate::utills::serialization::{SerializationKind, self};
 
 #[derive(ThisError, Debug)]
 pub enum AmqpError {
@@ -25,6 +30,50 @@ pub enum AmqpError {
 #[derive(Debug, Clone)]
 pub struct Amqp {
     pub pool: Pool,
+}
+
+#[derive(Debug, Clone)]
+pub struct AmqpSettings<'a> {
+    pub channel: ChannelSettings,
+    pub exchange: ExchangeSettings<'a>,
+    pub queue: QueueSettings<'a>,
+    pub queue_bind: QueueBindSettings<'a>,
+    pub consumer: ConsumerSettings<'a>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ChannelSettings {
+    pub prefetch_count: ShortUInt,
+    pub options: BasicQosOptions,
+}
+
+#[derive(Debug, Clone)]
+pub struct ExchangeSettings<'a> {
+    pub name: &'a str,
+    pub kind: ExchangeKind,
+    pub options: ExchangeDeclareOptions,
+    pub arguments: FieldTable
+}
+
+#[derive(Debug, Clone)]
+pub struct QueueSettings<'a> {
+    pub name: &'a str,
+    pub options: QueueDeclareOptions,
+    pub arguments: FieldTable
+}
+
+#[derive(Debug, Clone)]
+pub struct QueueBindSettings<'a> {
+    pub routing_key: &'a str,
+    pub options: QueueBindOptions,
+    pub arguments: FieldTable
+}
+
+#[derive(Debug, Clone)]
+pub struct ConsumerSettings<'a> {
+    pub consumer_tag: &'a str,
+    pub options: BasicConsumeOptions,
+    pub arguments: FieldTable
 }
 
 impl Amqp {
@@ -67,7 +116,14 @@ impl Amqp {
         }
     }
 
-    pub fn decompress_message(&self, msg: Vec<u8>) -> Result<String, AmqpError> {
+    pub fn decompress_message(&self, msg: Vec<u8>) -> Result<Vec<u8>, AmqpError> {
+        let mut uncompressed_message = Vec::new();
+        let mut decompressor = Decompressor::new(&msg[..], 4096);
+        decompressor.read_to_end(&mut uncompressed_message).unwrap();
+        Ok(uncompressed_message)
+    }
+
+    pub fn decompress_message_as_str(&self, msg: Vec<u8>) -> Result<String, AmqpError> {
         let mut uncompressed_message = Vec::new();
         let mut decompressor = Decompressor::new(&msg[..], 4096);
         decompressor.read_to_end(&mut uncompressed_message).unwrap();
@@ -213,6 +269,103 @@ impl Amqp {
             Err(error) => return Err(AmqpError::RMQError(error)),
         };
         Ok("OK")
+    }
+
+    pub async fn consume_topic_queue<T, E: Error>(&self, index: usize, settings: AmqpSettings<'_>, serialization: SerializationKind, mut deserialize_callback: impl FnMut(Vec<u8>) -> Result<T, AmqpError>, mut act_callback: impl FnMut(T) -> Result<(), E>) where T: for<'a> Deserialize<'a> + std::fmt::Debug {
+        // Get channel and declare topic, queue, binding and consumer
+        let channel = &self.get_channel().await.unwrap();
+        channel.basic_qos(settings.channel.prefetch_count, settings.channel.options).await.unwrap();
+        match self.declare_exchange_with_channel(
+            channel,
+            settings.exchange.name,
+            settings.exchange.kind,
+            settings.exchange.options,
+            settings.exchange.arguments
+        ).await {
+            Ok(()) => info!("{}: topic exchange <{}> declared", index, settings.exchange.name),
+            Err(error) => error!("{}: can't create topic exchange <{}> {}", index, settings.exchange.name, error)
+        };
+        let queue = match self.declare_queue_with_channel(
+            channel,
+            settings.queue.name,
+            settings.queue.options,
+            settings.queue.arguments,
+        ).await {
+            Ok(queue) => {
+                info!("{}: queue <{}> declared", index, queue.name());
+                queue
+        },
+            Err(error) => {
+                error!("{}: can't create queue <{}> {}", index, settings.queue.name, error);
+                panic!("{}", error)
+        }
+        };
+
+        match self.bind_queue_with_channel(
+            channel,
+            queue.name().as_str(),
+            settings.exchange.name,
+            settings.queue_bind.routing_key,
+            settings.queue_bind.options,
+            settings.queue_bind.arguments,
+        ).await {
+            Ok(()) => info!("{}: topic exchange <{}> and queue <{}> binded", index, settings.exchange.name, queue.name()),
+            Err(error) => {
+                error!("{}: can't create binding <{}> <{}> {}", index, settings.exchange.name, settings.queue.name, error);
+                panic!("{}", error)}
+        };
+
+        let mut consumer = match self.create_consumer_with_channel(
+            channel,
+            settings.queue.name,
+            settings.consumer.consumer_tag,
+            settings.consumer.options,
+            settings.consumer.arguments,
+        ).await {
+            Ok(consumer) => {
+                info!("{}: consumer <{}> declared", index, consumer.tag());
+                info!("{}: consumer <{}> to queue <{}> binded", index, consumer.tag(), queue.name());
+                consumer
+            },
+            Err(error) => {
+                error!("{}: can't bind consumer and queue <{}> {}", index, queue.name(), error);
+                panic!("{}", error)
+            }
+        };
+
+        // Consumer liscening to topic queue exchange
+        info!("{}: consumer <{}> is liscening", index, consumer.tag());
+        while let Some(delivery) = consumer.next().await {
+            if let Ok(delivery) = delivery {
+                let payload: Vec<u8> = delivery.data.clone();
+                let uncompressed_message = match delivery.properties.content_encoding().clone().unwrap_or_else(|| ShortString::from("")).as_str() {
+                    "br" => {
+                        self.decompress_message(payload)
+                    }
+                    _ => {
+                        Ok(payload)
+                    }
+                }.unwrap();
+
+                //let deserialized_payload: T = deserialize_callback(uncompressed_message).unwrap();
+                //let deserialized_payload: T = SerializationKind::Json.from_vec(&uncompressed_message).unwrap();
+                let deserialized_payload: T = serialization.from_vec(&uncompressed_message).unwrap();
+                debug!("{}: {:?}", index, deserialized_payload);
+                if let Err(x) = act_callback(deserialized_payload) {
+                    error!("{}: can't act on message <{}> {}", index, delivery.delivery_tag, x);
+                    channel.basic_nack(delivery.delivery_tag, BasicNackOptions {
+                        multiple: false,
+                        requeue: true
+                    }).await.unwrap();
+                };
+
+                match channel.basic_ack(delivery.delivery_tag, BasicAckOptions::default()).await {
+                    Ok(()) => trace!("{}: acknowledged message <{}>", index, delivery.delivery_tag),
+                    Err(error) => error!("{}: can't acknowledge message <{}> {}", index, delivery.delivery_tag, error)
+                };
+            };
+        }
+        debug!("{}: Shutting down...", index);
     }
 
 }

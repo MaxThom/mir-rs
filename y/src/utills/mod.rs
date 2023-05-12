@@ -8,3 +8,4 @@ pub use network::parse_host_port;
 pub mod logger;
 pub mod config;
 pub mod network;
+pub mod serialization;

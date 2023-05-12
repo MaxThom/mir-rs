@@ -22,10 +22,7 @@ enum Error {
     ParseIntError(#[from] ParseIntError),
     #[error("put host error: {0}")]
     PutHostError(#[from] questdb::Error),
-    //#[error("unknown flux error")]
-    //Unknown,
 }
-
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct Settings {
@@ -37,12 +34,9 @@ pub struct Settings {
 
 const APP_NAME: &str = "flux";
 const RMQ_EXCHANGE_NAME: &str = "iot";
-const RMQ_QUEUE_NAME: &str = "iot-q-metrics";
+const RMQ_QUEUE_NAME: &str = "iot-q-telemetry";
 const RMQ_PREFETCH_COUNT: u16 = 10;
 
-// https://www.cloudamqp.com/blog/part1-rabbitmq-best-practice.html
-// https://github.com/infosechoudini/influxdb-rs
-// https://github.com/influxdata/influxdb_iox
 
 #[tokio::main]
 async fn main() {
@@ -157,7 +151,7 @@ async fn start_consuming_topic_queue(index: usize, amqp: Amqp, mut callback: imp
             let payload: Vec<u8> = delivery.data.clone();
             let uncompressed_message = match delivery.properties.content_encoding().clone().unwrap_or_else(|| ShortString::from("")).as_str() {
                 "br" => {
-                    amqp.decompress_message(payload)
+                    amqp.decompress_message_as_str(payload)
                 }
                 _ => {
                     Ok(String::from_utf8(payload).unwrap())
@@ -193,12 +187,4 @@ fn push_to_puthost(sender: &mut Sender, payload: DevicePayload) -> Result<(), Er
     sender.flush(&mut buffer)?;
 
     Ok(())
-}
-
-fn parse_host_port(host: &str) -> Result<(String, u16), Error> {
-    let mut parts = host.split(':');
-    let host = parts.next().unwrap_or("");
-    let port = parts.next().unwrap_or("");
-    let port = port.parse::<u16>()?;
-    Ok((host.to_string(), port))
 }

@@ -1,7 +1,8 @@
+use lapin::ExchangeKind;
 use serde::{Deserialize, Serialize};
 use surrealdb::engine::remote::ws::Ws;
 use surrealdb::opt::auth::Root;
-use surrealdb::sql::Thing;
+use surrealdb::sql::{Thing, Field};
 use surrealdb::Surreal;
 use y::utills::network;
 
@@ -30,20 +31,17 @@ struct Record {
 }
 
 
-use std::num::ParseIntError;
-use futures::StreamExt;
 use log::{error, info, trace, debug, };
-use lapin::types::ShortString;
 use lapin::{options::*, types::FieldTable};
-use serde::Deserialize;
 use thiserror::Error as ThisError;
 use tokio_util::sync::CancellationToken;
 
 
-use y::clients::amqp::{Amqp};
+use y::clients::amqp::{Amqp, AmqpSettings, ChannelSettings, ExchangeSettings, QueueSettings, ConsumerSettings, QueueBindSettings, AmqpError};
 use y::models::DevicePayload;
 use y::utills::logger::setup_logger;
 use y::utills::config::{setup_config, FileFormat};
+use y::utills::serialization::SerializationKind;
 
 #[derive(ThisError, Debug)]
 enum Error {
@@ -72,8 +70,10 @@ pub struct Settings {
 }
 
 const APP_NAME: &str = "redox";
-const RMQ_EXCHANGE_NAME: &str = "iot-twin";
-const RMQ_QUEUE_NAME: &str = "iot-q-metrics";
+const RMQ_TWIN_EXCHANGE_NAME: &str = "iot-twin";
+const RMQ_DEVICE_EXCHANGE_NAME: &str = "iot-devices";
+const RMQ_TWIN_META_QUEUE_NAME: &str = "iot-q-twin-meta";
+const RMQ_TWIN_REPORTED_QUEUE_NAME: &str = "iot-q-twin-reported";
 const RMQ_PREFETCH_COUNT: u16 = 10;
 
 // https://www.cloudamqp.com/blog/part1-rabbitmq-best-practice.html
@@ -99,10 +99,7 @@ async fn main() {
                 _ = cloned_token.cancelled() => {
                     debug!("The token was shutdown")
                 }
-                _ = start_consuming_topic_queue(i, cloned_amqp,  move |payload| {
-                    //push_to_puthost(&mut sender, payload)
-                    ()
-                }) => {
+                _ = start_consuming_topic_queue_meta(i, cloned_amqp) => {
                     debug!("device shuting down...");
                 }
             }
@@ -118,10 +115,7 @@ async fn main() {
                 _ = cloned_token.cancelled() => {
                     debug!("The token was shutdown")
                 }
-                _ = start_consuming_topic_queue(i, cloned_amqp,  move |payload| {
-                    //push_to_puthost(&mut sender, payload)
-                    ()
-                }) => {
+                _ = start_consuming_topic_queue_reported(i, cloned_amqp) => {
                     debug!("device shuting down...");
                 }
             }
@@ -141,12 +135,82 @@ async fn main() {
 }
 
 
-async fn start_consuming_topic_queue(index: usize, amqp: Amqp, mut callback: impl FnMut(DevicePayload) -> Result<(), Error>) {
+async fn start_consuming_topic_queue_meta(index: usize, amqp: Amqp) {
+    let settings = AmqpSettings{
+        channel: ChannelSettings{
+            prefetch_count: RMQ_PREFETCH_COUNT,
+            options: BasicQosOptions::default(),
+        },
+        exchange: ExchangeSettings{
+            name: RMQ_TWIN_EXCHANGE_NAME,
+            kind: ExchangeKind::Topic,
+            options: ExchangeDeclareOptions::default(),
+            arguments: FieldTable::default(),
+        },
+        queue: QueueSettings{
+            name: RMQ_TWIN_META_QUEUE_NAME,
+            options: QueueDeclareOptions::default(),
+            arguments: FieldTable::default(),
+        },
+        queue_bind: QueueBindSettings{
+            routing_key: "#.twin_meta.v1",
+            options: QueueBindOptions::default(),
+            arguments: FieldTable::default(),
+        },
+        consumer: ConsumerSettings{
+            consumer_tag: "",
+            options: BasicConsumeOptions::default(),
+            arguments: FieldTable::default(),
+        },
+    };
+
+    amqp.consume_topic_queue(index, settings, SerializationKind::Json, deserialize_message, move |payload| {
+        push_to_puthost("sender", payload)
+    }).await;
     debug!("{}: Shutting down...", index);
 }
 
-fn push_to_puthost(sender: &mut Sender, payload: DevicePayload) -> Result<(), Error> {
+async fn start_consuming_topic_queue_reported(index: usize, amqp: Amqp) {
+    let settings = AmqpSettings{
+        channel: ChannelSettings{
+            prefetch_count: RMQ_PREFETCH_COUNT,
+            options: BasicQosOptions::default(),
+        },
+        exchange: ExchangeSettings{
+            name: RMQ_TWIN_EXCHANGE_NAME,
+            kind: ExchangeKind::Topic,
+            options: ExchangeDeclareOptions::default(),
+            arguments: FieldTable::default(),
+        },
+        queue: QueueSettings{
+            name: RMQ_TWIN_REPORTED_QUEUE_NAME,
+            options: QueueDeclareOptions::default(),
+            arguments: FieldTable::default(),
+        },
+        queue_bind: QueueBindSettings{
+            routing_key: "#.twin_reported.v1",
+            options: QueueBindOptions::default(),
+            arguments: FieldTable::default(),
+        },
+        consumer: ConsumerSettings{
+            consumer_tag: "",
+            options: BasicConsumeOptions::default(),
+            arguments: FieldTable::default(),
+        },
+    };
 
+    amqp.consume_topic_queue(index, settings, SerializationKind::Json, deserialize_message, move |payload| {
+        push_to_puthost("sender", payload)
+    }).await;
+    debug!("{}: Shutting down...", index);
+}
 
+fn deserialize_message(payload: Vec<u8>) -> Result<DevicePayload, AmqpError> {
+    //let device_payload: DevicePayload = serde_json::from_str(&uncompressed_message).unwrap();
+    Ok(serde_json::from_slice(&payload).unwrap())
+}
+
+fn push_to_puthost(sender: &str, payload: DevicePayload) -> Result<(), Error> {
+    debug!("{}: {:?}", sender, payload);
     Ok(())
 }

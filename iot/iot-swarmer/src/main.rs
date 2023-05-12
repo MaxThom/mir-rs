@@ -46,13 +46,13 @@ async fn main() {
 
     let amqp = Amqp::new(settings.amqp_addr.clone(), settings.amqp_conn_count);
     match amqp.declare_exchange(
-        "iot",
+        "iot-stream",
         lapin::ExchangeKind::Topic,
         ExchangeDeclareOptions::default(),
         FieldTable::default()
     ).await {
-        Ok(()) => info!("topic exchange <iot> declared"),
-        Err(error) => error!("can't create topic exchange <iot> {}", error)
+        Ok(()) => info!("topic exchange <iot-stream> declared"),
+        Err(error) => error!("can't create topic exchange <iot-stream> {}", error)
     };
 
     let mut global_index = 0;
@@ -106,7 +106,7 @@ async fn start_device(amqp: Amqp, index: u32, global_index: i64, template: Devic
 
         // Serialize & Send
         let str_payload = serde_json::to_string(&payload).unwrap();
-        match amqp.send_message(&str_payload, "iot", "swarm.telemetry.v1").await
+        match amqp.send_message(&str_payload, "iot-stream", "swarm.telemetry.v1").await
         {
             Ok(_) => trace!("message sent"),
             Err(error) => error!("can't send message {}", error)
