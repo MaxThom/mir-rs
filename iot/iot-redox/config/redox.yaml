@@ -1,10 +1,12 @@
 log_level: "info" # [Off|Error|Warn|Info|Debug|Trace]
 amqp_addr: "unset"
+web_srv_port: 5047
 surrealdb:
   addr: "localhost:80"
-  user: ""
+  user: "root"
   password: ""
 
 thread_count:
   meta_queue: "1"
   reported_queue: "1"
+  web_srv_queues: "1"

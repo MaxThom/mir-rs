@@ -17,6 +17,11 @@ https://learn.microsoft.com/en-us/azure/iot-hub/iot-hub-devguide-device-twins
 "version": 2, // might get useful for versioning
 ```
 
+statusReason:
+
+- provisioned: his twin was created in the database
+- registered: the device has connected to the hub
+
 ## Tags
 
 - Set of tags that can be used to filter devices.

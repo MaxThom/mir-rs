@@ -91,7 +91,12 @@ async fn start_device(amqp: Amqp, index: u32, global_index: i64, template: Devic
     // Create virtual device
     let mut device = LiveDevice::from_template(&template, index, global_index).unwrap();
 
-    // Loop
+    // Meta data loop
+    tokio::spawn(async move {
+        
+    });
+
+    // Telemetry Loop
     loop {
         // Generate
         let mut payload = DevicePayload::default();

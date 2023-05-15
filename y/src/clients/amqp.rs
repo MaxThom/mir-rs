@@ -271,8 +271,8 @@ impl Amqp {
         Ok("OK")
     }
 
-    pub async fn consume_topic_queue<T, E: Error>(&self, index: usize, settings: AmqpSettings<'_>, serialization: SerializationKind, mut deserialize_callback: impl FnMut(Vec<u8>) -> Result<T, AmqpError>, mut act_callback: impl FnMut(T) -> Result<(), E>) where T: for<'a> Deserialize<'a> + std::fmt::Debug {
-        // Get channel and declare topic, queue, binding and consumer
+    pub async fn consume_topic_queue<T, E: Error>(&self, index: usize, settings: AmqpSettings<'_>, serialization: SerializationKind, mut on_msg_callback: impl FnMut(T) -> Result<(), E>) where T: for<'a> Deserialize<'a> + std::fmt::Debug {
+        // Channel
         let channel = &self.get_channel().await.unwrap();
         channel.basic_qos(settings.channel.prefetch_count, settings.channel.options).await.unwrap();
         match self.declare_exchange_with_channel(
@@ -285,6 +285,8 @@ impl Amqp {
             Ok(()) => info!("{}: topic exchange <{}> declared", index, settings.exchange.name),
             Err(error) => error!("{}: can't create topic exchange <{}> {}", index, settings.exchange.name, error)
         };
+
+        // Queue
         let queue = match self.declare_queue_with_channel(
             channel,
             settings.queue.name,
@@ -301,6 +303,7 @@ impl Amqp {
         }
         };
 
+        // Binding
         match self.bind_queue_with_channel(
             channel,
             queue.name().as_str(),
@@ -315,6 +318,7 @@ impl Amqp {
                 panic!("{}", error)}
         };
 
+        // Consumer
         let mut consumer = match self.create_consumer_with_channel(
             channel,
             settings.queue.name,
@@ -333,7 +337,7 @@ impl Amqp {
             }
         };
 
-        // Consumer liscening to topic queue exchange
+        // Liscen to topic queue exchange
         info!("{}: consumer <{}> is liscening", index, consumer.tag());
         while let Some(delivery) = consumer.next().await {
             if let Ok(delivery) = delivery {
@@ -347,22 +351,27 @@ impl Amqp {
                     }
                 }.unwrap();
 
-                //let deserialized_payload: T = deserialize_callback(uncompressed_message).unwrap();
-                //let deserialized_payload: T = SerializationKind::Json.from_vec(&uncompressed_message).unwrap();
                 let deserialized_payload: T = serialization.from_vec(&uncompressed_message).unwrap();
                 debug!("{}: {:?}", index, deserialized_payload);
-                if let Err(x) = act_callback(deserialized_payload) {
-                    error!("{}: can't act on message <{}> {}", index, delivery.delivery_tag, x);
-                    channel.basic_nack(delivery.delivery_tag, BasicNackOptions {
-                        multiple: false,
-                        requeue: true
-                    }).await.unwrap();
-                };
 
-                match channel.basic_ack(delivery.delivery_tag, BasicAckOptions::default()).await {
-                    Ok(()) => trace!("{}: acknowledged message <{}>", index, delivery.delivery_tag),
-                    Err(error) => error!("{}: can't acknowledge message <{}> {}", index, delivery.delivery_tag, error)
-                };
+                match on_msg_callback(deserialized_payload) {
+                    Ok(()) => {
+                        match channel.basic_ack(delivery.delivery_tag, BasicAckOptions::default()).await {
+                            Ok(()) => trace!("{}: acknowledged message <{}>", index, delivery.delivery_tag),
+                            Err(error) => error!("{}: can't acknowledge message <{}> {}", index, delivery.delivery_tag, error)
+                        };
+                    },
+                    Err(error) => {
+                        error!("{}: can't act on message <{}> {}", index, delivery.delivery_tag, error);
+                        match channel.basic_nack(delivery.delivery_tag, BasicNackOptions {
+                            multiple: false,
+                            requeue: true
+                        }).await {
+                            Ok(()) => trace!("{}: negative acknowledged message <{}>", index, delivery.delivery_tag),
+                            Err(error) => error!("{}: can't negative acknowledge message <{}> {}", index, delivery.delivery_tag, error)
+                        };
+                    }
+                }
             };
         }
         debug!("{}: Shutting down...", index);
