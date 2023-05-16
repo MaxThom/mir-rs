@@ -1,44 +1,15 @@
-use std::collections::HashMap;
 use std::sync::Arc;
 
-use axum::http::StatusCode;
 use lapin::ExchangeKind;
-use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
-use surrealdb::engine::remote::ws::{Ws, Client};
+use serde::{Deserialize};
+use surrealdb::engine::remote::ws::{Ws};
 use surrealdb::opt::auth::Root;
-use surrealdb::sql::{Thing};
 use surrealdb::Surreal;
 use axum::{
     routing::get,
     Router,
 };
-use axum::extract::{Query, Json, State};
-
-
-#[derive(Debug, Serialize, Deserialize)]
-struct Name {
-    first: String,
-    last: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct Person {
-    title: String,
-    name: Name,
-    marketing: bool,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct Responsibility {
-    marketing: bool,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-struct Record {
-    #[allow(dead_code)]
-    id: Thing,
-}
+pub mod api;
 
 
 use log::{error, info, trace, debug, };
@@ -92,12 +63,9 @@ const RMQ_PREFETCH_COUNT: u16 = 10;
 
 // https://www.cloudamqp.com/blog/part1-rabbitmq-best-practice.html
 // docker run --rm --pull always -p 80:8000 -v ./surrealdb:/opt/surrealdb/ surrealdb/surrealdb:latest start --log trace --user root --pass root file:/opt/surrealdb/iot.db
+// curl -X POST -u "root:root" -H "NS: iot" -H "DB: iot" -H "Accept: application/json" -d "SELECT * FROM device_twin" localhost:80/sql
+// curl -X POST -u "root:root" -H "NS: iot" -H "DB: iot" -H "Accept: application/json" -d "SELECT * FROM type::table(device_twin) WHERE meta_properties.device_id = pig5" localhost:80/sql
 
-
-struct AppState {
-    amqp: Amqp,
-    db: Surreal<Client>,
-}
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
@@ -154,14 +122,16 @@ async fn main() -> Result<(), Error> {
     }
 
     // Web Server
-    let shared_state = Arc::new(AppState { amqp: amqp.clone(), db: db.clone() });
+    let shared_state = Arc::new(api::ApiState { amqp: amqp.clone(), db: db.clone() });
     let srv = Router::new()
         .route("/ready", get(ready))
         .route("/alive", get(alive))
-        .route("/devicetwins", get(get_device_twins).post(create_device_twins))
-        .route("/devicetwins/meta", get(get_device_twins_meta))
-        .route("/devicetwins/desired", get(get_device_twins_desired))
-        .route("/devicetwins/reported", get(get_device_twins_reported))
+        .route("/devicetwins", get(api::get_device_twins).post(api::create_device_twins).put(api::update_device_twins))
+        .route("/devicetwins/meta", get(api::get_device_twins_meta))
+        .route("/devicetwins/tag", get(api::get_device_twins_tag))
+        .route("/devicetwins/desired", get(api::get_device_twins_desired))
+        .route("/devicetwins/reported", get(api::get_device_twins_reported))
+        .route("/devicetwins/records", get(api::get_records))
         .with_state(shared_state);
     let cloned_token = token.clone();
     tokio::spawn(async move {
@@ -204,48 +174,7 @@ async fn ready() -> String {
 }
 
 
-async fn get_device_twins(State(state): State<Arc<AppState>>, Query(params): Query<HashMap<String, String>>) -> Result<Json<Value>, StatusCode> {
-    let people: &Vec<Person> = &state.db.select("person").await.map_err(|error| {
-        error!("Error: {}", error);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-    dbg!(people);
 
-
-    Ok(Json(json!({ "records": people })))
-}
-
-async fn get_device_twins_meta(State(state): State<Arc<AppState>>, Query(params): Query<HashMap<String, String>>) -> String {
-    format!("{}", true)
-}
-
-async fn get_device_twins_desired(State(state): State<Arc<AppState>>, Query(params): Query<HashMap<String, String>>) -> String {
-    format!("{}", true)
-}
-
-async fn get_device_twins_reported(State(state): State<Arc<AppState>>, Query(params): Query<HashMap<String, String>>) -> String {
-    format!("{}", true)
-}
-
-async fn create_device_twins(State(state): State<Arc<AppState>>, Json(payload): Json<Person>) -> Result<Json<Value>, StatusCode> {
-    let created: Record = state.db
-        .create("person")
-        .content(Person {
-            title: payload.title,
-            name: Name {
-                first: payload.name.first,
-                last: payload.name.last,
-            },
-            marketing: payload.marketing,
-        })
-    .await.map_err(|error| {
-        error!("Error: {}", error);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-    dbg!(&created);
-
-    Ok(Json(json!({ "records": &created })))
-}
 
 async fn start_consuming_topic_queue_meta(index: usize, amqp: Amqp) {
     let settings = AmqpSettings{
