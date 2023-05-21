@@ -4,6 +4,7 @@
         "./iot/iot-flux/Cargo.toml",
         "./iot/iot-swarmer/Cargo.toml",
         "./iot/iot-oxi/Cargo.toml",
+        "./iot/iot-redox/Cargo.toml",
         "./y/Cargo.toml",
         "./y/Cargo.toml",
         "./y/Cargo.toml",

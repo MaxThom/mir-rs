@@ -7,7 +7,7 @@ https://learn.microsoft.com/en-us/azure/iot-hub/iot-hub-devguide-device-twins
 
 ```json
 "deviceId": "devA", // device id
-"etag": "AAAAAAAAAAc=", // model id
+"modelId": "AAAAAAAAAAc=", // model id
 "status": "enabled", // enabled, disabled
 "statusReason": "provisioned", // provisioned, registered, blocked, unblocked
 "statusUpdateTime": "0001-01-01T00:00:00", // timestamp UTC
