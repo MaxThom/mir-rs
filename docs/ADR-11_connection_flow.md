@@ -15,8 +15,8 @@
 TODO - Redox
 - [x] create a device twin from api
 - [x] able to retrieve device twin or parts of it via api
-- [ ] able to update tags for twin
-- [ ] able to update desired properties for twin
+- [x] able to update tags for twin
+- [x] able to update desired properties for twin
   - [ ] send a message to the device with updated desired properties
 - [ ] read reported properties messages
   - [ ] update reported properties of device twin in db

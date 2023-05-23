@@ -1,27 +1,26 @@
 use std::sync::Arc;
 
+use axum::{routing::get, Router};
 use lapin::ExchangeKind;
-use serde::{Deserialize};
-use surrealdb::engine::remote::ws::{Ws};
+use serde::Deserialize;
+use surrealdb::engine::remote::ws::Ws;
 use surrealdb::opt::auth::Root;
 use surrealdb::Surreal;
-use axum::{
-    routing::get,
-    Router,
-};
 pub mod api;
+pub mod twin_service;
 
-
-use log::{error, info, trace, debug, };
 use lapin::{options::*, types::FieldTable};
+use log::{debug, error, info, trace};
 use thiserror::Error as ThisError;
 use tokio_util::sync::CancellationToken;
 
-
-use y::clients::amqp::{Amqp, AmqpSettings, ChannelSettings, ExchangeSettings, QueueSettings, ConsumerSettings, QueueBindSettings};
+use y::clients::amqp::{
+    Amqp, AmqpSettings, ChannelSettings, ConsumerSettings, ExchangeSettings, QueueBindSettings,
+    QueueSettings,
+};
 use y::models::DevicePayload;
-use y::utills::logger::setup_logger;
 use y::utills::config::{setup_config, FileFormat};
+use y::utills::logger::setup_logger;
 use y::utills::serialization::SerializationKind;
 
 #[derive(ThisError, Debug)]
@@ -44,7 +43,6 @@ pub struct SurrealDb {
     pub addr: String,
 }
 
-
 #[derive(Debug, Deserialize, Clone)]
 pub struct Settings {
     pub log_level: String,
@@ -66,7 +64,6 @@ const RMQ_PREFETCH_COUNT: u16 = 10;
 // curl -X POST -u "root:root" -H "NS: iot" -H "DB: iot" -H "Accept: application/json" -d "SELECT * FROM device_twin" localhost:80/sql
 // curl -X POST -u "root:root" -H "NS: iot" -H "DB: iot" -H "Accept: application/json" -d "SELECT * FROM type::table(device_twin) WHERE meta_properties.device_id = pig5" localhost:80/sql
 
-
 #[tokio::main]
 async fn main() -> Result<(), Error> {
     // Init token, logger & config
@@ -76,10 +73,17 @@ async fn main() -> Result<(), Error> {
     info!("{:?}", settings);
 
     // Create amqp connection pool
-    let amqp: Amqp = Amqp::new(settings.amqp_addr.clone(), settings.thread_count.meta_queue + settings.thread_count.reported_queue + settings.thread_count.web_srv_queues);
+    let amqp: Amqp = Amqp::new(
+        settings.amqp_addr.clone(),
+        settings.thread_count.meta_queue
+            + settings.thread_count.reported_queue
+            + settings.thread_count.web_srv_queues,
+    );
 
     // Create surrealdb connection. Surreal create handles multiple connections using channel. See .with_capacity(0)
-    let db = Surreal::new::<Ws>(settings.surrealdb.addr).with_capacity(0).await?;
+    let db = Surreal::new::<Ws>(settings.surrealdb.addr)
+        .with_capacity(0)
+        .await?;
     db.signin(Root {
         username: &settings.surrealdb.user,
         password: &settings.surrealdb.password,
@@ -122,15 +126,23 @@ async fn main() -> Result<(), Error> {
     }
 
     // Web Server
-    let shared_state = Arc::new(api::ApiState { amqp: amqp.clone(), db: db.clone() });
+    let shared_state = Arc::new(api::ApiState {
+        amqp: amqp.clone(),
+        db: db.clone(),
+    });
     let srv = Router::new()
         .route("/ready", get(ready))
         .route("/alive", get(alive))
-        .route("/devicetwins", get(api::get_device_twins).post(api::create_device_twins).put(api::update_device_twins))
-        .route("/devicetwins/meta", get(api::get_device_twins_meta))
-        .route("/devicetwins/tag", get(api::get_device_twins_tag))
-        .route("/devicetwins/desired", get(api::get_device_twins_desired))
-        .route("/devicetwins/reported", get(api::get_device_twins_reported))
+        .route(
+            "/devicetwins",
+            get(api::get_device_twins)
+                .post(api::create_device_twins)
+                .put(api::update_device_twins),
+        )
+        .route("/devicetwins/:target", get(api::get_device_twins_meta).put(api::update_device_twins))
+        //.route("/devicetwins/tag", get(api::get_device_twins_tag))
+        //.route("/devicetwins/desired", get(api::get_device_twins_desired))
+        //.route("/devicetwins/reported", get(api::get_device_twins_reported))
         .route("/devicetwins/records", get(api::get_records))
         .with_state(shared_state);
     let cloned_token = token.clone();
@@ -143,8 +155,7 @@ async fn main() -> Result<(), Error> {
                 info!("serving Axum on 0.0.0.0:{} 🚀", settings.web_srv_port);
                 axum::Server::bind(&format!("0.0.0.0:{}", settings.web_srv_port).parse().unwrap())
                     .serve(srv.into_make_service())
-                    .await
-                    .unwrap();
+                    .await.unwrap();
             } => {
                 debug!("device shuting down...");
             }
@@ -173,32 +184,29 @@ async fn ready() -> String {
     format!("{}", true)
 }
 
-
-
-
 async fn start_consuming_topic_queue_meta(index: usize, amqp: Amqp) {
-    let settings = AmqpSettings{
-        channel: ChannelSettings{
+    let settings = AmqpSettings {
+        channel: ChannelSettings {
             prefetch_count: RMQ_PREFETCH_COUNT,
             options: BasicQosOptions::default(),
         },
-        exchange: ExchangeSettings{
+        exchange: ExchangeSettings {
             name: RMQ_TWIN_EXCHANGE_NAME,
             kind: ExchangeKind::Topic,
             options: ExchangeDeclareOptions::default(),
             arguments: FieldTable::default(),
         },
-        queue: QueueSettings{
+        queue: QueueSettings {
             name: RMQ_TWIN_META_QUEUE_NAME,
             options: QueueDeclareOptions::default(),
             arguments: FieldTable::default(),
         },
-        queue_bind: QueueBindSettings{
+        queue_bind: QueueBindSettings {
             routing_key: "#.twin_meta.v1",
             options: QueueBindOptions::default(),
             arguments: FieldTable::default(),
         },
-        consumer: ConsumerSettings{
+        consumer: ConsumerSettings {
             consumer_tag: "",
             options: BasicConsumeOptions::default(),
             arguments: FieldTable::default(),
@@ -207,33 +215,34 @@ async fn start_consuming_topic_queue_meta(index: usize, amqp: Amqp) {
 
     amqp.consume_topic_queue(index, settings, SerializationKind::Json, move |payload| {
         push_to_puthost("sender", payload)
-    }).await;
+    })
+    .await;
     debug!("{}: Shutting down...", index);
 }
 
 async fn start_consuming_topic_queue_reported(index: usize, amqp: Amqp) {
-    let settings = AmqpSettings{
-        channel: ChannelSettings{
+    let settings = AmqpSettings {
+        channel: ChannelSettings {
             prefetch_count: RMQ_PREFETCH_COUNT,
             options: BasicQosOptions::default(),
         },
-        exchange: ExchangeSettings{
+        exchange: ExchangeSettings {
             name: RMQ_TWIN_EXCHANGE_NAME,
             kind: ExchangeKind::Topic,
             options: ExchangeDeclareOptions::default(),
             arguments: FieldTable::default(),
         },
-        queue: QueueSettings{
+        queue: QueueSettings {
             name: RMQ_TWIN_REPORTED_QUEUE_NAME,
             options: QueueDeclareOptions::default(),
             arguments: FieldTable::default(),
         },
-        queue_bind: QueueBindSettings{
+        queue_bind: QueueBindSettings {
             routing_key: "#.twin_reported.v1",
             options: QueueBindOptions::default(),
             arguments: FieldTable::default(),
         },
-        consumer: ConsumerSettings{
+        consumer: ConsumerSettings {
             consumer_tag: "",
             options: BasicConsumeOptions::default(),
             arguments: FieldTable::default(),
@@ -242,7 +251,8 @@ async fn start_consuming_topic_queue_reported(index: usize, amqp: Amqp) {
 
     amqp.consume_topic_queue(index, settings, SerializationKind::Json, move |payload| {
         push_to_puthost("sender", payload)
-    }).await;
+    })
+    .await;
     debug!("{}: Shutting down...", index);
 }
 
