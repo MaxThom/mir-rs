@@ -10,6 +10,8 @@ pub enum TargetProperties {
     Desired,
     Reported,
     Tag,
+    Meta,
+    All,
 }
 
 impl TargetProperties {
@@ -18,6 +20,8 @@ impl TargetProperties {
             TargetProperties::Desired => "desired_properties",
             TargetProperties::Reported => "reported_properties",
             TargetProperties::Tag => "tag_properties",
+            TargetProperties::Meta => "meta_properties",
+            TargetProperties::All => "all_properties",
         }
     }
 
@@ -26,6 +30,8 @@ impl TargetProperties {
             TargetProperties::Desired => "desired",
             TargetProperties::Reported => "reported",
             TargetProperties::Tag => "tag",
+            TargetProperties::Meta => "meta",
+            TargetProperties::All => "all",
         }
     }
 
@@ -34,7 +40,9 @@ impl TargetProperties {
             "desired" => TargetProperties::Desired,
             "reported" => TargetProperties::Reported,
             "tag" => TargetProperties::Tag,
-            _ => TargetProperties::Desired,
+            "meta" => TargetProperties::Meta,
+            "all" => TargetProperties::All,
+            _ => TargetProperties::All,
         }
     }
 }

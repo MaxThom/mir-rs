@@ -20,9 +20,7 @@ use y::{
     },
 };
 
-use crate::twin_service::{
-    generate_threadsafe_random_string, get_device_twins_from_db, update_device_twins_properties_in_db,
-};
+use crate::twin_service::*;
 
 pub struct ApiState {
     pub amqp: Amqp,
@@ -42,7 +40,7 @@ pub async fn get_records(
     })?;
     dbg!(twins);
 
-    Ok(Json(json!(twins)))
+    Ok(Json(json!({ "result": twins })))
 }
 
 pub async fn get_device_twins(
@@ -60,10 +58,64 @@ pub async fn get_device_twins(
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
     dbg!(twins);
-    Ok(Json(json!(twins)))
+
+    Ok(Json(json!({ "result": twins })))
 }
 
-pub async fn update_device_twins(
+pub async fn get_device_twins_properties(
+    State(state): State<Arc<ApiState>>,
+    Path(target): Path<TargetProperties>,
+    Query(params): Query<HashMap<String, String>>,
+) -> Result<Json<Value>, StatusCode> {
+    let mut device_id = "".to_string();
+    if params.contains_key(DEVICE_ID_KEY) {
+        device_id = params[DEVICE_ID_KEY].clone();
+    }
+    let twins = &get_device_twins_from_db(state.db.clone(), device_id.as_str())
+        .await
+        .map_err(|error| {
+            error!("Error: {}", error);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+    dbg!(twins);
+
+    match target {
+        TargetProperties::Meta => {
+            let twins_meta: &Vec<Option<MetaProperties>> = &twins
+            .iter()
+            .map(|twin| twin.meta_properties.clone())
+            .collect();
+            Ok(Json(json!({ "result": twins_meta })))
+        },
+        TargetProperties::Tag => {
+            let twins_tag: &Vec<Option<Properties>> = &twins
+            .iter()
+            .map(|twin| twin.tag_properties.clone())
+            .collect();
+            Ok(Json(json!({ "result": twins_tag })))
+        },
+        TargetProperties::Desired => {
+            let twins_desired: &Vec<Option<Properties>> = &twins
+            .iter()
+            .map(|twin| twin.desired_properties.clone())
+            .collect();
+            Ok(Json(json!({ "result": twins_desired })))
+        },
+        TargetProperties::Reported => {
+            let twins_reported: &Vec<Option<Properties>> = &twins
+            .iter()
+            .map(|twin| twin.reported_properties.clone())
+            .collect();
+            Ok(Json(json!({ "result": twins_reported })))
+        },
+        TargetProperties::All => {
+            Ok(Json(json!({ "result": twins })))
+        }
+    }
+
+}
+
+pub async fn update_device_twins_properties(
     State(state): State<Arc<ApiState>>,
     Path(target): Path<TargetProperties>,
     Query(params): Query<HashMap<String, String>>,
@@ -91,130 +143,57 @@ pub async fn update_device_twins(
         })?;
 
     dbg!(&twins);
-    Ok(Json(json!("")))
-}
-
-pub async fn get_device_twins_meta(
-    State(state): State<Arc<ApiState>>,
-    Query(params): Query<HashMap<String, String>>,
-) -> Result<Json<Value>, StatusCode> {
-    let mut device_id = "".to_string();
-    if params.contains_key(DEVICE_ID_KEY) {
-        device_id = params[DEVICE_ID_KEY].clone();
-    }
-    let twins = &get_device_twins_from_db(state.db.clone(), device_id.as_str())
-        .await
-        .map_err(|error| {
-            error!("Error: {}", error);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-    let twins_meta: &Vec<Option<MetaProperties>> = &twins
-        .iter()
-        .map(|twin| twin.meta_properties.clone())
-        .collect();
-    dbg!(twins_meta);
-    Ok(Json(json!(twins_meta)))
-}
-
-pub async fn get_device_twins_tag(
-    State(state): State<Arc<ApiState>>,
-    Query(params): Query<HashMap<String, String>>,
-) -> Result<Json<Value>, StatusCode> {
-    let mut device_id = "".to_string();
-    if params.contains_key(DEVICE_ID_KEY) {
-        device_id = params[DEVICE_ID_KEY].clone();
-    }
-    let twins = &get_device_twins_from_db(state.db.clone(), device_id.as_str())
-        .await
-        .map_err(|error| {
-            error!("Error: {}", error);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-    let twins_meta: &Vec<Option<Properties>> = &twins
-        .iter()
-        .map(|twin| twin.tag_properties.clone())
-        .collect();
-    dbg!(twins_meta);
-    Ok(Json(json!(twins_meta)))
-}
-
-pub async fn get_device_twins_desired(
-    State(state): State<Arc<ApiState>>,
-    Query(params): Query<HashMap<String, String>>,
-) -> Result<Json<Value>, StatusCode> {
-    let mut device_id = "".to_string();
-    if params.contains_key(DEVICE_ID_KEY) {
-        device_id = params[DEVICE_ID_KEY].clone();
-    }
-    let twins = &get_device_twins_from_db(state.db.clone(), device_id.as_str())
-        .await
-        .map_err(|error| {
-            error!("Error: {}", error);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-    let twins_meta: &Vec<Option<Properties>> = &twins
-        .iter()
-        .map(|twin| twin.desired_properties.clone())
-        .collect();
-    dbg!(twins_meta);
-    Ok(Json(json!(twins_meta)))
-}
-
-pub async fn get_device_twins_reported(
-    State(state): State<Arc<ApiState>>,
-    Query(params): Query<HashMap<String, String>>,
-) -> Result<Json<Value>, StatusCode> {
-    let mut device_id = "".to_string();
-    if params.contains_key(DEVICE_ID_KEY) {
-        device_id = params[DEVICE_ID_KEY].clone();
-    }
-    let twins = &get_device_twins_from_db(state.db.clone(), device_id.as_str())
-        .await
-        .map_err(|error| {
-            error!("Error: {}", error);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-    let twins_meta: &Vec<Option<Properties>> = &twins
-        .iter()
-        .map(|twin| twin.reported_properties.clone())
-        .collect();
-    dbg!(twins_meta);
-    Ok(Json(json!(twins_meta)))
+    Ok(Json(json!({ "result": twins })))
 }
 
 pub async fn create_device_twins(
     State(state): State<Arc<ApiState>>,
     Json(payload): Json<NewDevice>,
 ) -> Result<Json<Value>, StatusCode> {
-    let etag: String = generate_threadsafe_random_string();
+    debug!("create_device_twin");
+    dbg!(&payload);
 
-    let id = Thing::from((String::from("device_twin"), etag));
-    println!("id: {:?}", id);
+    // TODO: Find etag from device_id
 
-    // TODO: check if device is unique
-    let x = DeviceTwin {
-        id: None,
-        meta_properties: Some(MetaProperties {
-            device_id: payload.device_id.clone(),
-            model_id: payload.model_id,
-            etag: id.id.to_string(),
-            status: payload.status,
-            status_reason: StatusReason::Provisioned,
-            status_update_time: Utc::now().timestamp_nanos(),
-            connection_state: ConnectionState::Disconnected,
-            last_activity_time: Utc::now().timestamp_nanos(),
-            version: 1,
-        }),
-        tag_properties: Some(Properties::default()),
-        desired_properties: Some(Properties::default()),
-        reported_properties: Some(Properties::default()),
-    };
+    let created = create_device_twins_in_db(state.db.clone(), payload)
+        .await
+        .map_err(|error| {
+            error!("Error: {}", error.to_string());
+            StatusCode::INTERNAL_SERVER_ERROR;            
+        });
 
-    let created: Record = state.db.create(id).content(x).await.map_err(|error| {
-        error!("Error: {}", error);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
+    if let Err(error) = created {
+        return Ok(Json(json!({ "result": error })));
+    }
+
     dbg!(&created);
+    Ok(Json(json!({ "result": created })))
+}
 
-    Ok(Json(json!({ "records": &created })))
+pub async fn delete_device_twins(
+    State(state): State<Arc<ApiState>>,
+    Query(params): Query<HashMap<String, String>>
+) -> Result<Json<Value>, StatusCode> {
+    debug!("delete_device_twin");
+    let mut device_id = "".to_string();
+    if params.contains_key(DEVICE_ID_KEY) {
+        device_id = params[DEVICE_ID_KEY].clone();
+    }
+    let mut etag = "".to_string();
+    if params.contains_key(ETAG_KEY) {
+        etag = params[ETAG_KEY].clone();
+    }
+    dbg!(&device_id, &etag);
+
+    // TODO: Find etag from device_id
+
+    let twins = &delete_device_twins_in_db(state.db.clone(), etag.as_str())
+        .await
+        .map_err(|error| {
+            error!("Error: {}", error);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+    dbg!(&twins);
+    Ok(Json(json!({ "result": &twins })))
 }

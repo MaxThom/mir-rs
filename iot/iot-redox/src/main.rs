@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use axum::routing::post;
 use axum::{routing::get, Router};
 use lapin::ExchangeKind;
 use serde::Deserialize;
@@ -135,14 +136,12 @@ async fn main() -> Result<(), Error> {
         .route("/alive", get(alive))
         .route(
             "/devicetwins",
-            get(api::get_device_twins)
+                get(api::get_device_twins)
                 .post(api::create_device_twins)
-                .put(api::update_device_twins),
+                //.put(api::update_device_twins)
+                .delete(api::delete_device_twins),
         )
-        .route("/devicetwins/:target", get(api::get_device_twins_meta).put(api::update_device_twins))
-        //.route("/devicetwins/tag", get(api::get_device_twins_tag))
-        //.route("/devicetwins/desired", get(api::get_device_twins_desired))
-        //.route("/devicetwins/reported", get(api::get_device_twins_reported))
+        .route("/devicetwins/:target", get(api::get_device_twins_properties).put(api::update_device_twins_properties))
         .route("/devicetwins/records", get(api::get_records))
         .with_state(shared_state);
     let cloned_token = token.clone();
