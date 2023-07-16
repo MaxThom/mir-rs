@@ -55,7 +55,7 @@ pub struct Settings {
 
 const APP_NAME: &str = "redox";
 const RMQ_TWIN_EXCHANGE_NAME: &str = "iot-twin";
-//const RMQ_DEVICE_EXCHANGE_NAME: &str = "iot-devices";
+const RMQ_DEVICE_EXCHANGE_NAME: &str = "iot-devices";
 const RMQ_TWIN_META_QUEUE_NAME: &str = "iot-q-twin-meta";
 const RMQ_TWIN_REPORTED_QUEUE_NAME: &str = "iot-q-twin-reported";
 const RMQ_PREFETCH_COUNT: u16 = 10;
@@ -78,7 +78,8 @@ async fn main() -> Result<(), Error> {
         settings.amqp_addr.clone(),
         settings.thread_count.meta_queue
             + settings.thread_count.reported_queue
-            + settings.thread_count.web_srv_queues,
+            + settings.thread_count.web_srv_queues
+            + 1,
     );
 
     // Create surrealdb connection. Surreal create handles multiple connections using channel. See .with_capacity(0)
@@ -91,6 +92,23 @@ async fn main() -> Result<(), Error> {
     })
     .await?;
     db.use_ns("iot").use_db("iot").await?;
+    info!("connected to SurrealDb");
+
+    // Exchange for device comms
+    let ch = amqp.get_channel().await.unwrap();
+    match amqp
+        .declare_exchange_with_channel(
+            &ch,
+            RMQ_DEVICE_EXCHANGE_NAME,
+            lapin::ExchangeKind::Topic,
+            ExchangeDeclareOptions::default(),
+            FieldTable::default(),
+        )
+        .await
+    {
+        Ok(()) => info!("topic exchange <iot-devices> declared"),
+        Err(error) => error!("can't create topic exchange <iot-devices> {}", error),
+    };
 
     // Task for Meta queue
     for i in 0..settings.thread_count.meta_queue {
@@ -136,12 +154,15 @@ async fn main() -> Result<(), Error> {
         .route("/alive", get(alive))
         .route(
             "/devicetwins",
-                get(api::get_device_twins)
+            get(api::get_device_twins)
                 .post(api::create_device_twins)
                 //.put(api::update_device_twins)
                 .delete(api::delete_device_twins),
         )
-        .route("/devicetwins/:target", get(api::get_device_twins_properties).put(api::update_device_twins_properties))
+        .route(
+            "/devicetwins/:target",
+            get(api::get_device_twins_properties).put(api::update_device_twins_properties),
+        )
         .route("/devicetwins/records", get(api::get_records))
         .with_state(shared_state);
     let cloned_token = token.clone();

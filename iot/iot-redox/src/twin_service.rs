@@ -7,14 +7,15 @@ use rand::{thread_rng, Rng};
 use serde_json::Value;
 use surrealdb::sql::Thing;
 use surrealdb::{engine::remote::ws::Client, opt::PatchOp, Surreal};
-use y::models::NewDevice;
-use y::models::device_twin::{TargetProperties, Properties, MetaProperties, StatusReason, ConnectionState};
-use y::models::{device_twin::Record, DeviceTwin};
 use thiserror::Error as ThisError;
+use y::models::device_twin::{
+    ConnectionState, MetaProperties, Properties, StatusReason, TargetProperties,
+};
+use y::models::NewDevice;
+use y::models::{device_twin::Record, DeviceTwin};
 
 const DEVICE_ID_KEY: &str = "device_id";
 const ETAG_KEY: &str = "etag";
-
 
 #[derive(ThisError, Debug)]
 
@@ -45,7 +46,7 @@ pub async fn get_device_twins_from_db(
 
     // Return all device twins meta
     let twins: Vec<DeviceTwin> = db.select("device_twin").await?;
-    return Ok(twins);
+    Ok(twins)
 }
 
 pub async fn get_device_twins_with_id_from_db(
@@ -54,7 +55,7 @@ pub async fn get_device_twins_with_id_from_db(
 ) -> Result<Option<DeviceTwin>, surrealdb::Error> {
     // Return all device twins meta
     let twin: Option<DeviceTwin> = db.select(("device_twin", etag)).await?;
-    return Ok(twin);
+    Ok(twin)
 }
 
 pub async fn create_device_twins_in_db(
@@ -66,7 +67,6 @@ pub async fn create_device_twins_in_db(
     let id = Thing::from((String::from("device_twin"), etag));
     println!("id: {:?}", id);
 
-    
     let x = DeviceTwin {
         id: None,
         meta_properties: Some(MetaProperties {
@@ -93,13 +93,11 @@ pub async fn create_device_twins_in_db(
 pub async fn update_device_twins_properties_in_db(
     db: Surreal<Client>,
     etag: &str,
-    target: TargetProperties,
-    properties: Properties,
+    target: &TargetProperties,
+    properties: &Properties,
 ) -> Result<Option<DeviceTwin>, TwinServiceError> {
     //let updated: Record = db.update(("device_twin", etag)).merge(device_twin).await?;
 
-    
-    
     // A timestamp could be saved with each properties and version
     // This timestamp would be compare with the oie stored and only update if newer
     // This would help concurrent operation
@@ -120,13 +118,16 @@ pub async fn update_device_twins_properties_in_db(
 
         // The incoming update has to be higher, in oxi|dizer, we add +1 to the version for the developer.
         if current_version > properties.version {
-            return Err(TwinServiceError::RecordNewer(current_version, properties.version));
+            return Err(TwinServiceError::RecordNewer(
+                current_version,
+                properties.version,
+            ));
         }
     } else {
         return Err(TwinServiceError::RecordNotFound(etag.to_string()));
     }
 
-    let updated: Result<Option<DeviceTwin>, surrealdb::Error>  = db
+    let updated: Result<Option<DeviceTwin>, surrealdb::Error> = db
         .update(("device_twin", etag))
         .patch(PatchOp::replace(
             format!("/{}", target.as_device_twin_route()).as_str(),
@@ -138,19 +139,18 @@ pub async fn update_device_twins_properties_in_db(
         dbg!(&updated);
         Ok(updated)
     } else {
-        return Err(TwinServiceError::Msg("Warning updating device twin, see: https://github.com/surrealdb/surrealdb/issues/1998".to_string()));
+        Err(TwinServiceError::Msg(
+            "Warning updating device twin, see: https://github.com/surrealdb/surrealdb/issues/1998"
+                .to_string(),
+        ))
     }
-
-    
 }
 
 pub async fn delete_device_twins_in_db(
     db: Surreal<Client>,
-    etag: &str
+    etag: &str,
 ) -> Result<Option<DeviceTwin>, TwinServiceError> {
-    let deleted: Option<DeviceTwin> = db
-        .delete(("device_twin", etag))
-        .await?;
+    let deleted: Option<DeviceTwin> = db.delete(("device_twin", etag)).await?;
 
     dbg!(&deleted);
     Ok(deleted)

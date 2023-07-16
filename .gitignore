@@ -11,3 +11,4 @@ Cargo.lock
 
 scratch/*
 **/local_*.*
+**/surrealdb/

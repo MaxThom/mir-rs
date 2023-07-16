@@ -21,14 +21,16 @@ A single topic queue will be used for device metadata. Metadata are reported by 
 ```
 
 To Flux, lot of messages, Own exchange, iot-flux
-<device_type>.twin_meta.<version_type>
-<device_type>.twin_desired.<version_type>
 <device_type>.telemetry.<version_type>
 <device_type>.metrics<version_type>
 <device_type>.logs<version_type>
 
+To Redox, 
+<device_type>.twin_meta.<version_type>
+<device_type>.twin_reported.<version_type>
+
 To Device, lot of queues, Own exchange, iot-device
-<device_id>.twin_reported.<version_type>
+<device_id>.twin_desired.<version_type>
 <device_id>.commands<version_type>
 
 ### Reported Properties

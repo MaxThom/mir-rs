@@ -5,7 +5,6 @@ surrealdb:
   addr: "localhost:80"
   user: "root"
   password: ""
-
 thread_count:
   meta_queue: "1"
   reported_queue: "1"

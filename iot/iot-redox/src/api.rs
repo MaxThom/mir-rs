@@ -1,26 +1,26 @@
 use std::{collections::HashMap, sync::Arc};
 
 use axum::{
-    extract::{Query, State, Path},
+    extract::{Path, Query, State},
     http::StatusCode,
     Json,
 };
 use chrono::Utc;
-use log::{debug, error};
+use log::{debug, error, trace};
 use serde_json::{json, Value};
 use surrealdb::{engine::remote::ws::Client, sql::Thing, Surreal};
 use y::{
     clients::amqp::Amqp,
     models::{
         device_twin::{
-            ConnectionState, MetaProperties, NewDevice, Record,
-            StatusReason, Properties, TargetProperties,
+            ConnectionState, MetaProperties, NewDevice, Properties, Record, StatusReason,
+            TargetProperties,
         },
         DeviceTwin,
     },
 };
 
-use crate::twin_service::*;
+use crate::{twin_service::*, RMQ_DEVICE_EXCHANGE_NAME};
 
 pub struct ApiState {
     pub amqp: Amqp,
@@ -82,37 +82,34 @@ pub async fn get_device_twins_properties(
     match target {
         TargetProperties::Meta => {
             let twins_meta: &Vec<Option<MetaProperties>> = &twins
-            .iter()
-            .map(|twin| twin.meta_properties.clone())
-            .collect();
+                .iter()
+                .map(|twin| twin.meta_properties.clone())
+                .collect();
             Ok(Json(json!({ "result": twins_meta })))
-        },
+        }
         TargetProperties::Tag => {
             let twins_tag: &Vec<Option<Properties>> = &twins
-            .iter()
-            .map(|twin| twin.tag_properties.clone())
-            .collect();
+                .iter()
+                .map(|twin| twin.tag_properties.clone())
+                .collect();
             Ok(Json(json!({ "result": twins_tag })))
-        },
+        }
         TargetProperties::Desired => {
             let twins_desired: &Vec<Option<Properties>> = &twins
-            .iter()
-            .map(|twin| twin.desired_properties.clone())
-            .collect();
+                .iter()
+                .map(|twin| twin.desired_properties.clone())
+                .collect();
             Ok(Json(json!({ "result": twins_desired })))
-        },
+        }
         TargetProperties::Reported => {
             let twins_reported: &Vec<Option<Properties>> = &twins
-            .iter()
-            .map(|twin| twin.reported_properties.clone())
-            .collect();
+                .iter()
+                .map(|twin| twin.reported_properties.clone())
+                .collect();
             Ok(Json(json!({ "result": twins_reported })))
-        },
-        TargetProperties::All => {
-            Ok(Json(json!({ "result": twins })))
         }
+        TargetProperties::All => Ok(Json(json!({ "result": twins }))),
     }
-
 }
 
 pub async fn update_device_twins_properties(
@@ -122,6 +119,7 @@ pub async fn update_device_twins_properties(
     Json(payload): Json<Properties>,
 ) -> Result<Json<Value>, StatusCode> {
     debug!("update_device_twin");
+    // Api info
     let mut device_id = "".to_string();
     if params.contains_key(DEVICE_ID_KEY) {
         device_id = params[DEVICE_ID_KEY].clone();
@@ -134,13 +132,32 @@ pub async fn update_device_twins_properties(
     dbg!(&payload);
 
     // TODO: Find etag from device_id
+    // Update db
+    let twins =
+        &update_device_twins_properties_in_db(state.db.clone(), etag.as_str(), &target, &payload)
+            .await
+            .map_err(|error| {
+                error!("Error: {}", error);
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
 
-    let twins = &update_device_twins_properties_in_db(state.db.clone(), etag.as_str(), target, payload)
-        .await
-        .map_err(|error| {
-            error!("Error: {}", error);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    // Send msg to device with update properties if its desired
+    // Create reusable channel
+    if target.clone() == TargetProperties::Desired {
+        let str_payload = serde_json::to_string(&payload).unwrap();
+        match state
+            .amqp
+            .send_message(
+                &str_payload,
+                RMQ_DEVICE_EXCHANGE_NAME,
+                &format!("{}.devices.v1", etag.as_str()),
+            )
+            .await
+        {
+            Ok(_) => trace!("message sent"),
+            Err(error) => error!("can't send message {}", error),
+        };
+    }
 
     dbg!(&twins);
     Ok(Json(json!({ "result": twins })))
@@ -159,7 +176,7 @@ pub async fn create_device_twins(
         .await
         .map_err(|error| {
             error!("Error: {}", error.to_string());
-            StatusCode::INTERNAL_SERVER_ERROR;            
+            StatusCode::INTERNAL_SERVER_ERROR;
         });
 
     if let Err(error) = created {
@@ -172,7 +189,7 @@ pub async fn create_device_twins(
 
 pub async fn delete_device_twins(
     State(state): State<Arc<ApiState>>,
-    Query(params): Query<HashMap<String, String>>
+    Query(params): Query<HashMap<String, String>>,
 ) -> Result<Json<Value>, StatusCode> {
     debug!("delete_device_twin");
     let mut device_id = "".to_string();

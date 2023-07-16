@@ -2,8 +2,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use surrealdb::sql::Thing;
 
-
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+#[derive(Debug, Serialize, Deserialize, Clone, Default, Eq, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum TargetProperties {
     #[default]
@@ -100,7 +99,7 @@ pub struct MetaProperties {
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct Properties {
     pub properties: Value,
-    pub  version: usize,
+    pub version: usize,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
