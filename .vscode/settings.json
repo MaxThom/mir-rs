@@ -1,13 +1,10 @@
 {
     "sarif-viewer.connectToGithubCodeScanning": "off",
     "rust-analyzer.linkedProjects": [
-        "./iot/iot-flux/Cargo.toml",
-        "./iot/iot-swarmer/Cargo.toml",
-        "./iot/iot-oxi/Cargo.toml",
-        "./iot/iot-redox/Cargo.toml",
-        "./y/Cargo.toml",
-        "./y/Cargo.toml",
-        "./y/Cargo.toml",
-        "./y/Cargo.toml"
+        "./src/iot-flux/Cargo.toml",
+        "./src/iot-swarmer/Cargo.toml",
+        "./src/iot-oxi/Cargo.toml",
+        "./src/iot-redox/Cargo.toml",
+        "./src/y/Cargo.toml",
     ]
 }

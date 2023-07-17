@@ -1,11 +1,10 @@
 [workspace]
 
 members = [
-    "iot/iot-flux",
-    "iot/iot-swarmer",
-    "iot/iot-oxi",
-    "iot/iot-redox",
-    "rabbitmq/rabbitmq-warp",
-    "playground",
-    "y",
+    "src/iot-flux",
+    "src/iot-swarmer",
+    "src/iot-oxi",
+    "src/iot-dizer",
+    "src/iot-redox",
+    "src/y",
 ]
