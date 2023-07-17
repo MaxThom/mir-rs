@@ -95,6 +95,9 @@ async fn main() -> Result<(), Error> {
     info!("connected to SurrealDb");
 
     // Exchange for device comms
+    let test = amqp.get_connection().await.unwrap();
+    println!("{:?}", test.status());
+
     let ch = amqp.get_channel().await.unwrap();
     match amqp
         .declare_exchange_with_channel(
@@ -109,6 +112,7 @@ async fn main() -> Result<(), Error> {
         Ok(()) => info!("topic exchange <iot-devices> declared"),
         Err(error) => error!("can't create topic exchange <iot-devices> {}", error),
     };
+    println!("ASDASD");
 
     // Task for Meta queue
     for i in 0..settings.thread_count.meta_queue {
