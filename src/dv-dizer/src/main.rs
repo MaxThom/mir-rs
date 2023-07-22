@@ -2,7 +2,6 @@ use dizer::DizerBuilder;
 use log::info;
 use thiserror::Error as ThisError;
 use tokio_util::sync::CancellationToken;
-use y::clients::amqp::Amqp;
 
 #[derive(ThisError, Debug)]
 enum Error {}
@@ -32,7 +31,7 @@ async fn main() -> Result<(), String> {
     // Init token, logger & config
     let token = CancellationToken::new();
 
-    let dizer = DizerBuilder::default()
+    let dizer_builder = DizerBuilder::default()
         .with_cli()
         .with_config_file("")
         .with_device_id("012xwf===")
@@ -40,18 +39,20 @@ async fn main() -> Result<(), String> {
         .with_thread_count(1)
         .with_logger("info")
         .build();
-
-    if let Err(x) = dizer {
-        return Err(format!("error initializing Dizer: {:?}", x));
+    if let Err(x) = dizer_builder {
+        return Err(format!("error initializing Dizer: {}", x));
     }
-    let x = dizer.unwrap();
+    let mut dizer = dizer_builder.unwrap();
 
-    // Create amqp connection pool
-    let amqp: Amqp = Amqp::new(x.config.mir_addr.clone(), x.config.thread_count);
-    let test = amqp.get_connection().await.unwrap();
-    info!("{:?}", test.status());
+    // TODO: Add desired properties handler
+    // TODO: Add send telemetry
+    // TODO: Add send reported properties
+    // TODO: Send heartbeat
 
-    info!("Dizer has joined the fleet 🚀.");
+    if let Err(x) = dizer.join_fleet().await {
+        return Err(format!("error joining fleet: {}", x));
+    }
+
     info!("Press ctrl+c to shutdown.");
     match tokio::signal::ctrl_c().await {
         Ok(()) => {

@@ -1,13 +1,22 @@
 use std::{path::PathBuf, str::FromStr};
 
 use clap::ArgMatches;
-use log::info;
+use error::DizerBuildError;
+use log::{debug, info};
 use serde::Deserialize;
-use y::utils::{config::FileFormat, setup_cli, setup_config, setup_logger};
+use y::{
+    clients::amqp::Amqp,
+    utils::{config::FileFormat, setup_cli, setup_config, setup_logger},
+};
 
-#[derive(Debug, Default)]
+use crate::error::DizerError;
+
+pub mod error;
+
+#[derive(Debug)]
 pub struct Dizer {
     pub config: Config,
+    amqp: Amqp,
 }
 
 #[derive(Debug, Default, Deserialize, Clone)]
@@ -26,12 +35,6 @@ pub struct DizerBuilder {
     thread_count: Option<usize>,
     log_level: Option<String>,
     cli: Option<ArgMatches>,
-}
-
-#[derive(Debug)]
-pub enum IncompleteDizerBuild {
-    NoMirServer,
-    NoDeviceId,
 }
 
 const APP_NAME: &str = "dizer";
@@ -97,9 +100,12 @@ impl DizerBuilder {
         self
     }
 
-    pub fn build(&mut self) -> Result<Dizer, IncompleteDizerBuild> {
+    pub fn build(&mut self) -> Result<Dizer, DizerBuildError> {
         println!("{:?}", &self);
-        let mut dizer = Dizer::default();
+        let mut dizer = Dizer {
+            amqp: Amqp::new("".to_string(), 1),
+            config: Config::default(),
+        };
 
         // Default < Builder < Configfile < Cli
 
@@ -143,13 +149,31 @@ impl DizerBuilder {
         info!("{:?}", dizer.config);
 
         if dizer.config.device_id.is_empty() {
-            return Err(IncompleteDizerBuild::NoDeviceId);
+            return Err(DizerBuildError::NoDeviceId);
         }
 
         if dizer.config.mir_addr.is_empty() {
-            return Err(IncompleteDizerBuild::NoMirServer);
+            return Err(DizerBuildError::NoMirServer);
         }
 
         Ok(dizer)
+    }
+}
+
+impl Dizer {
+    pub async fn join_fleet(&mut self) -> Result<(), DizerError> {
+        // Create amqp connection pool
+        self.amqp = Amqp::new(self.config.mir_addr.clone(), self.config.thread_count);
+        let test = self
+            .amqp
+            .get_connection()
+            .await
+            .map_err(|_| DizerError::CantConnectToMir)?;
+        debug!("{:?}", test.status());
+        info!(
+            "{} (Class Dizer) has joined the fleet 🚀.",
+            self.config.device_id
+        );
+        Ok(())
     }
 }
