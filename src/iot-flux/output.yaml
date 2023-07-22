@@ -1,0 +1,1088 @@
+#![feature(prelude_import)]
+#[prelude_import]
+use std::prelude::rust_2021::*;
+#[macro_use]
+extern crate std;
+use futures::StreamExt;
+use lapin::types::ShortString;
+use lapin::{options::*, types::FieldTable};
+use log::{debug, error, info, trace};
+use questdb::ingress::{Buffer, Sender, SenderBuilder, TimestampNanos};
+use serde::Deserialize;
+use std::num::ParseIntError;
+use std::path::PathBuf;
+use thiserror::Error as ThisError;
+use tokio_util::sync::CancellationToken;
+use y::utils::setup_cli;
+use y::clients::amqp::Amqp;
+use y::models::DevicePayload;
+use y::utils::config::{setup_config, FileFormat};
+use y::utils::logger::setup_logger;
+use y::utils::network;
+enum Error {
+    #[error("rmq pool error: {0}")]
+    ParseIntError(#[from] ParseIntError),
+    #[error("put host error: {0}")]
+    PutHostError(#[from] questdb::Error),
+}
+#[allow(unused_qualifications)]
+impl std::error::Error for Error {
+    fn source(&self) -> std::option::Option<&(dyn std::error::Error + 'static)> {
+        use thiserror::__private::AsDynError;
+        #[allow(deprecated)]
+        match self {
+            Error::ParseIntError { 0: source, .. } => {
+                std::option::Option::Some(source.as_dyn_error())
+            }
+            Error::PutHostError { 0: source, .. } => {
+                std::option::Option::Some(source.as_dyn_error())
+            }
+        }
+    }
+}
+#[allow(unused_qualifications)]
+impl std::fmt::Display for Error {
+    fn fmt(&self, __formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        #[allow(unused_imports)]
+        use thiserror::__private::{DisplayAsDisplay, PathAsDisplay};
+        #[allow(unused_variables, deprecated, clippy::used_underscore_binding)]
+        match self {
+            Error::ParseIntError(_0) => {
+                __formatter
+                    .write_fmt(format_args!("rmq pool error: {0}", _0.as_display()))
+            }
+            Error::PutHostError(_0) => {
+                __formatter
+                    .write_fmt(format_args!("put host error: {0}", _0.as_display()))
+            }
+        }
+    }
+}
+#[allow(unused_qualifications)]
+impl std::convert::From<ParseIntError> for Error {
+    #[allow(deprecated)]
+    fn from(source: ParseIntError) -> Self {
+        Error::ParseIntError { 0: source }
+    }
+}
+#[allow(unused_qualifications)]
+impl std::convert::From<questdb::Error> for Error {
+    #[allow(deprecated)]
+    fn from(source: questdb::Error) -> Self {
+        Error::PutHostError { 0: source }
+    }
+}
+#[automatically_derived]
+impl ::core::fmt::Debug for Error {
+    fn fmt(&self, f: &mut ::core::fmt::Formatter) -> ::core::fmt::Result {
+        match self {
+            Error::ParseIntError(__self_0) => {
+                ::core::fmt::Formatter::debug_tuple_field1_finish(
+                    f,
+                    "ParseIntError",
+                    &__self_0,
+                )
+            }
+            Error::PutHostError(__self_0) => {
+                ::core::fmt::Formatter::debug_tuple_field1_finish(
+                    f,
+                    "PutHostError",
+                    &__self_0,
+                )
+            }
+        }
+    }
+}
+pub struct Settings {
+    pub log_level: String,
+    pub amqp_addr: String,
+    pub questdb_addr: String,
+    pub thread_count: usize,
+}
+#[automatically_derived]
+impl ::core::fmt::Debug for Settings {
+    fn fmt(&self, f: &mut ::core::fmt::Formatter) -> ::core::fmt::Result {
+        ::core::fmt::Formatter::debug_struct_field4_finish(
+            f,
+            "Settings",
+            "log_level",
+            &self.log_level,
+            "amqp_addr",
+            &self.amqp_addr,
+            "questdb_addr",
+            &self.questdb_addr,
+            "thread_count",
+            &&self.thread_count,
+        )
+    }
+}
+#[doc(hidden)]
+#[allow(non_upper_case_globals, unused_attributes, unused_qualifications)]
+const _: () = {
+    #[allow(unused_extern_crates, clippy::useless_attribute)]
+    extern crate serde as _serde;
+    #[automatically_derived]
+    impl<'de> _serde::Deserialize<'de> for Settings {
+        fn deserialize<__D>(
+            __deserializer: __D,
+        ) -> _serde::__private::Result<Self, __D::Error>
+        where
+            __D: _serde::Deserializer<'de>,
+        {
+            #[allow(non_camel_case_types)]
+            #[doc(hidden)]
+            enum __Field {
+                __field0,
+                __field1,
+                __field2,
+                __field3,
+                __ignore,
+            }
+            #[doc(hidden)]
+            struct __FieldVisitor;
+            impl<'de> _serde::de::Visitor<'de> for __FieldVisitor {
+                type Value = __Field;
+                fn expecting(
+                    &self,
+                    __formatter: &mut _serde::__private::Formatter,
+                ) -> _serde::__private::fmt::Result {
+                    _serde::__private::Formatter::write_str(
+                        __formatter,
+                        "field identifier",
+                    )
+                }
+                fn visit_u64<__E>(
+                    self,
+                    __value: u64,
+                ) -> _serde::__private::Result<Self::Value, __E>
+                where
+                    __E: _serde::de::Error,
+                {
+                    match __value {
+                        0u64 => _serde::__private::Ok(__Field::__field0),
+                        1u64 => _serde::__private::Ok(__Field::__field1),
+                        2u64 => _serde::__private::Ok(__Field::__field2),
+                        3u64 => _serde::__private::Ok(__Field::__field3),
+                        _ => _serde::__private::Ok(__Field::__ignore),
+                    }
+                }
+                fn visit_str<__E>(
+                    self,
+                    __value: &str,
+                ) -> _serde::__private::Result<Self::Value, __E>
+                where
+                    __E: _serde::de::Error,
+                {
+                    match __value {
+                        "log_level" => _serde::__private::Ok(__Field::__field0),
+                        "amqp_addr" => _serde::__private::Ok(__Field::__field1),
+                        "questdb_addr" => _serde::__private::Ok(__Field::__field2),
+                        "thread_count" => _serde::__private::Ok(__Field::__field3),
+                        _ => _serde::__private::Ok(__Field::__ignore),
+                    }
+                }
+                fn visit_bytes<__E>(
+                    self,
+                    __value: &[u8],
+                ) -> _serde::__private::Result<Self::Value, __E>
+                where
+                    __E: _serde::de::Error,
+                {
+                    match __value {
+                        b"log_level" => _serde::__private::Ok(__Field::__field0),
+                        b"amqp_addr" => _serde::__private::Ok(__Field::__field1),
+                        b"questdb_addr" => _serde::__private::Ok(__Field::__field2),
+                        b"thread_count" => _serde::__private::Ok(__Field::__field3),
+                        _ => _serde::__private::Ok(__Field::__ignore),
+                    }
+                }
+            }
+            impl<'de> _serde::Deserialize<'de> for __Field {
+                #[inline]
+                fn deserialize<__D>(
+                    __deserializer: __D,
+                ) -> _serde::__private::Result<Self, __D::Error>
+                where
+                    __D: _serde::Deserializer<'de>,
+                {
+                    _serde::Deserializer::deserialize_identifier(
+                        __deserializer,
+                        __FieldVisitor,
+                    )
+                }
+            }
+            #[doc(hidden)]
+            struct __Visitor<'de> {
+                marker: _serde::__private::PhantomData<Settings>,
+                lifetime: _serde::__private::PhantomData<&'de ()>,
+            }
+            impl<'de> _serde::de::Visitor<'de> for __Visitor<'de> {
+                type Value = Settings;
+                fn expecting(
+                    &self,
+                    __formatter: &mut _serde::__private::Formatter,
+                ) -> _serde::__private::fmt::Result {
+                    _serde::__private::Formatter::write_str(
+                        __formatter,
+                        "struct Settings",
+                    )
+                }
+                #[inline]
+                fn visit_seq<__A>(
+                    self,
+                    mut __seq: __A,
+                ) -> _serde::__private::Result<Self::Value, __A::Error>
+                where
+                    __A: _serde::de::SeqAccess<'de>,
+                {
+                    let __field0 = match match _serde::de::SeqAccess::next_element::<
+                        String,
+                    >(&mut __seq) {
+                        _serde::__private::Ok(__val) => __val,
+                        _serde::__private::Err(__err) => {
+                            return _serde::__private::Err(__err);
+                        }
+                    } {
+                        _serde::__private::Some(__value) => __value,
+                        _serde::__private::None => {
+                            return _serde::__private::Err(
+                                _serde::de::Error::invalid_length(
+                                    0usize,
+                                    &"struct Settings with 4 elements",
+                                ),
+                            );
+                        }
+                    };
+                    let __field1 = match match _serde::de::SeqAccess::next_element::<
+                        String,
+                    >(&mut __seq) {
+                        _serde::__private::Ok(__val) => __val,
+                        _serde::__private::Err(__err) => {
+                            return _serde::__private::Err(__err);
+                        }
+                    } {
+                        _serde::__private::Some(__value) => __value,
+                        _serde::__private::None => {
+                            return _serde::__private::Err(
+                                _serde::de::Error::invalid_length(
+                                    1usize,
+                                    &"struct Settings with 4 elements",
+                                ),
+                            );
+                        }
+                    };
+                    let __field2 = match match _serde::de::SeqAccess::next_element::<
+                        String,
+                    >(&mut __seq) {
+                        _serde::__private::Ok(__val) => __val,
+                        _serde::__private::Err(__err) => {
+                            return _serde::__private::Err(__err);
+                        }
+                    } {
+                        _serde::__private::Some(__value) => __value,
+                        _serde::__private::None => {
+                            return _serde::__private::Err(
+                                _serde::de::Error::invalid_length(
+                                    2usize,
+                                    &"struct Settings with 4 elements",
+                                ),
+                            );
+                        }
+                    };
+                    let __field3 = match match _serde::de::SeqAccess::next_element::<
+                        usize,
+                    >(&mut __seq) {
+                        _serde::__private::Ok(__val) => __val,
+                        _serde::__private::Err(__err) => {
+                            return _serde::__private::Err(__err);
+                        }
+                    } {
+                        _serde::__private::Some(__value) => __value,
+                        _serde::__private::None => {
+                            return _serde::__private::Err(
+                                _serde::de::Error::invalid_length(
+                                    3usize,
+                                    &"struct Settings with 4 elements",
+                                ),
+                            );
+                        }
+                    };
+                    _serde::__private::Ok(Settings {
+                        log_level: __field0,
+                        amqp_addr: __field1,
+                        questdb_addr: __field2,
+                        thread_count: __field3,
+                    })
+                }
+                #[inline]
+                fn visit_map<__A>(
+                    self,
+                    mut __map: __A,
+                ) -> _serde::__private::Result<Self::Value, __A::Error>
+                where
+                    __A: _serde::de::MapAccess<'de>,
+                {
+                    let mut __field0: _serde::__private::Option<String> = _serde::__private::None;
+                    let mut __field1: _serde::__private::Option<String> = _serde::__private::None;
+                    let mut __field2: _serde::__private::Option<String> = _serde::__private::None;
+                    let mut __field3: _serde::__private::Option<usize> = _serde::__private::None;
+                    while let _serde::__private::Some(__key)
+                        = match _serde::de::MapAccess::next_key::<__Field>(&mut __map) {
+                            _serde::__private::Ok(__val) => __val,
+                            _serde::__private::Err(__err) => {
+                                return _serde::__private::Err(__err);
+                            }
+                        } {
+                        match __key {
+                            __Field::__field0 => {
+                                if _serde::__private::Option::is_some(&__field0) {
+                                    return _serde::__private::Err(
+                                        <__A::Error as _serde::de::Error>::duplicate_field(
+                                            "log_level",
+                                        ),
+                                    );
+                                }
+                                __field0 = _serde::__private::Some(
+                                    match _serde::de::MapAccess::next_value::<
+                                        String,
+                                    >(&mut __map) {
+                                        _serde::__private::Ok(__val) => __val,
+                                        _serde::__private::Err(__err) => {
+                                            return _serde::__private::Err(__err);
+                                        }
+                                    },
+                                );
+                            }
+                            __Field::__field1 => {
+                                if _serde::__private::Option::is_some(&__field1) {
+                                    return _serde::__private::Err(
+                                        <__A::Error as _serde::de::Error>::duplicate_field(
+                                            "amqp_addr",
+                                        ),
+                                    );
+                                }
+                                __field1 = _serde::__private::Some(
+                                    match _serde::de::MapAccess::next_value::<
+                                        String,
+                                    >(&mut __map) {
+                                        _serde::__private::Ok(__val) => __val,
+                                        _serde::__private::Err(__err) => {
+                                            return _serde::__private::Err(__err);
+                                        }
+                                    },
+                                );
+                            }
+                            __Field::__field2 => {
+                                if _serde::__private::Option::is_some(&__field2) {
+                                    return _serde::__private::Err(
+                                        <__A::Error as _serde::de::Error>::duplicate_field(
+                                            "questdb_addr",
+                                        ),
+                                    );
+                                }
+                                __field2 = _serde::__private::Some(
+                                    match _serde::de::MapAccess::next_value::<
+                                        String,
+                                    >(&mut __map) {
+                                        _serde::__private::Ok(__val) => __val,
+                                        _serde::__private::Err(__err) => {
+                                            return _serde::__private::Err(__err);
+                                        }
+                                    },
+                                );
+                            }
+                            __Field::__field3 => {
+                                if _serde::__private::Option::is_some(&__field3) {
+                                    return _serde::__private::Err(
+                                        <__A::Error as _serde::de::Error>::duplicate_field(
+                                            "thread_count",
+                                        ),
+                                    );
+                                }
+                                __field3 = _serde::__private::Some(
+                                    match _serde::de::MapAccess::next_value::<
+                                        usize,
+                                    >(&mut __map) {
+                                        _serde::__private::Ok(__val) => __val,
+                                        _serde::__private::Err(__err) => {
+                                            return _serde::__private::Err(__err);
+                                        }
+                                    },
+                                );
+                            }
+                            _ => {
+                                let _ = match _serde::de::MapAccess::next_value::<
+                                    _serde::de::IgnoredAny,
+                                >(&mut __map) {
+                                    _serde::__private::Ok(__val) => __val,
+                                    _serde::__private::Err(__err) => {
+                                        return _serde::__private::Err(__err);
+                                    }
+                                };
+                            }
+                        }
+                    }
+                    let __field0 = match __field0 {
+                        _serde::__private::Some(__field0) => __field0,
+                        _serde::__private::None => {
+                            match _serde::__private::de::missing_field("log_level") {
+                                _serde::__private::Ok(__val) => __val,
+                                _serde::__private::Err(__err) => {
+                                    return _serde::__private::Err(__err);
+                                }
+                            }
+                        }
+                    };
+                    let __field1 = match __field1 {
+                        _serde::__private::Some(__field1) => __field1,
+                        _serde::__private::None => {
+                            match _serde::__private::de::missing_field("amqp_addr") {
+                                _serde::__private::Ok(__val) => __val,
+                                _serde::__private::Err(__err) => {
+                                    return _serde::__private::Err(__err);
+                                }
+                            }
+                        }
+                    };
+                    let __field2 = match __field2 {
+                        _serde::__private::Some(__field2) => __field2,
+                        _serde::__private::None => {
+                            match _serde::__private::de::missing_field("questdb_addr") {
+                                _serde::__private::Ok(__val) => __val,
+                                _serde::__private::Err(__err) => {
+                                    return _serde::__private::Err(__err);
+                                }
+                            }
+                        }
+                    };
+                    let __field3 = match __field3 {
+                        _serde::__private::Some(__field3) => __field3,
+                        _serde::__private::None => {
+                            match _serde::__private::de::missing_field("thread_count") {
+                                _serde::__private::Ok(__val) => __val,
+                                _serde::__private::Err(__err) => {
+                                    return _serde::__private::Err(__err);
+                                }
+                            }
+                        }
+                    };
+                    _serde::__private::Ok(Settings {
+                        log_level: __field0,
+                        amqp_addr: __field1,
+                        questdb_addr: __field2,
+                        thread_count: __field3,
+                    })
+                }
+            }
+            #[doc(hidden)]
+            const FIELDS: &'static [&'static str] = &[
+                "log_level",
+                "amqp_addr",
+                "questdb_addr",
+                "thread_count",
+            ];
+            _serde::Deserializer::deserialize_struct(
+                __deserializer,
+                "Settings",
+                FIELDS,
+                __Visitor {
+                    marker: _serde::__private::PhantomData::<Settings>,
+                    lifetime: _serde::__private::PhantomData,
+                },
+            )
+        }
+    }
+};
+#[automatically_derived]
+impl ::core::clone::Clone for Settings {
+    #[inline]
+    fn clone(&self) -> Settings {
+        Settings {
+            log_level: ::core::clone::Clone::clone(&self.log_level),
+            amqp_addr: ::core::clone::Clone::clone(&self.amqp_addr),
+            questdb_addr: ::core::clone::Clone::clone(&self.questdb_addr),
+            thread_count: ::core::clone::Clone::clone(&self.thread_count),
+        }
+    }
+}
+const APP_NAME: &str = "flux";
+const RMQ_EXCHANGE_NAME: &str = "iot";
+const RMQ_QUEUE_NAME: &str = "iot-q-telemetry";
+const RMQ_PREFETCH_COUNT: u16 = 10;
+fn main() {
+    let body = async {
+        let matches = setup_cli();
+        let token = CancellationToken::new();
+        let settings: Settings = setup_config(
+                APP_NAME,
+                FileFormat::YAML,
+                matches.get_one::<PathBuf>(y::utils::cli::CONFIG_KEY),
+            )
+            .unwrap();
+        setup_logger(settings.log_level.clone()).unwrap();
+        {
+            let lvl = ::log::Level::Info;
+            if lvl <= ::log::STATIC_MAX_LEVEL && lvl <= ::log::max_level() {
+                ::log::__private_api_log(
+                    format_args!("{0:?}", settings),
+                    lvl,
+                    &("iot_flux", "iot_flux", "src/iot-flux/src/main.rs", 53u32),
+                    ::log::__private_api::Option::None,
+                );
+            }
+        };
+        let amqp: Amqp = Amqp::new(settings.amqp_addr.clone(), settings.thread_count);
+        let host_port = network::parse_host_port(settings.questdb_addr.as_str())
+            .unwrap();
+        for i in 0..settings.thread_count {
+            let cloned_token = token.clone();
+            let cloned_amqp = amqp.clone();
+            let mut sender = SenderBuilder::new(host_port.0.clone(), host_port.1.clone())
+                .connect()
+                .unwrap();
+            tokio::spawn(async move {
+                {
+                    #[doc(hidden)]
+                    mod __tokio_select_util {
+                        pub(super) enum Out<_0, _1> {
+                            _0(_0),
+                            _1(_1),
+                            Disabled,
+                        }
+                        pub(super) type Mask = u8;
+                    }
+                    use ::tokio::macros::support::Future;
+                    use ::tokio::macros::support::Pin;
+                    use ::tokio::macros::support::Poll::{Ready, Pending};
+                    const BRANCHES: u32 = 2;
+                    let mut disabled: __tokio_select_util::Mask = Default::default();
+                    if !true {
+                        let mask: __tokio_select_util::Mask = 1 << 0;
+                        disabled |= mask;
+                    }
+                    if !true {
+                        let mask: __tokio_select_util::Mask = 1 << 1;
+                        disabled |= mask;
+                    }
+                    let mut output = {
+                        let mut futures = (
+                            cloned_token.cancelled(),
+                            start_consuming_topic_queue(
+                                i,
+                                cloned_amqp,
+                                move |payload| { push_to_puthost(&mut sender, payload) },
+                            ),
+                        );
+                        let mut futures = &mut futures;
+                        ::tokio::macros::support::poll_fn(|cx| {
+                                let mut is_pending = false;
+                                let start = {
+                                    ::tokio::macros::support::thread_rng_n(BRANCHES)
+                                };
+                                for i in 0..BRANCHES {
+                                    let branch;
+                                    #[allow(clippy::modulo_one)]
+                                    {
+                                        branch = (start + i) % BRANCHES;
+                                    }
+                                    match branch {
+                                        #[allow(unreachable_code)]
+                                        0 => {
+                                            let mask = 1 << branch;
+                                            if disabled & mask == mask {
+                                                continue;
+                                            }
+                                            let (fut, ..) = &mut *futures;
+                                            let mut fut = unsafe { Pin::new_unchecked(fut) };
+                                            let out = match Future::poll(fut, cx) {
+                                                Ready(out) => out,
+                                                Pending => {
+                                                    is_pending = true;
+                                                    continue;
+                                                }
+                                            };
+                                            disabled |= mask;
+                                            #[allow(unused_variables)] #[allow(unused_mut)]
+                                            match &out {
+                                                _ => {}
+                                                _ => continue,
+                                            }
+                                            return Ready(__tokio_select_util::Out::_0(out));
+                                        }
+                                        #[allow(unreachable_code)]
+                                        1 => {
+                                            let mask = 1 << branch;
+                                            if disabled & mask == mask {
+                                                continue;
+                                            }
+                                            let (_, fut, ..) = &mut *futures;
+                                            let mut fut = unsafe { Pin::new_unchecked(fut) };
+                                            let out = match Future::poll(fut, cx) {
+                                                Ready(out) => out,
+                                                Pending => {
+                                                    is_pending = true;
+                                                    continue;
+                                                }
+                                            };
+                                            disabled |= mask;
+                                            #[allow(unused_variables)] #[allow(unused_mut)]
+                                            match &out {
+                                                _ => {}
+                                                _ => continue,
+                                            }
+                                            return Ready(__tokio_select_util::Out::_1(out));
+                                        }
+                                        _ => {
+                                            ::core::panicking::panic_fmt(
+                                                format_args!(
+                                                    "internal error: entered unreachable code: {0}",
+                                                    format_args!(
+                                                        "reaching this means there probably is an off by one bug",
+                                                    ),
+                                                ),
+                                            );
+                                        }
+                                    }
+                                }
+                                if is_pending {
+                                    Pending
+                                } else {
+                                    Ready(__tokio_select_util::Out::Disabled)
+                                }
+                            })
+                            .await
+                    };
+                    match output {
+                        __tokio_select_util::Out::_0(_) => {
+                            let lvl = ::log::Level::Debug;
+                            if lvl <= ::log::STATIC_MAX_LEVEL
+                                && lvl <= ::log::max_level()
+                            {
+                                ::log::__private_api_log(
+                                    format_args!("The token was shutdown"),
+                                    lvl,
+                                    &(
+                                        "iot_flux",
+                                        "iot_flux",
+                                        "src/iot-flux/src/main.rs",
+                                        67u32,
+                                    ),
+                                    ::log::__private_api::Option::None,
+                                );
+                            }
+                        }
+                        __tokio_select_util::Out::_1(_) => {
+                            {
+                                let lvl = ::log::Level::Debug;
+                                if lvl <= ::log::STATIC_MAX_LEVEL
+                                    && lvl <= ::log::max_level()
+                                {
+                                    ::log::__private_api_log(
+                                        format_args!("device shuting down..."),
+                                        lvl,
+                                        &(
+                                            "iot_flux",
+                                            "iot_flux",
+                                            "src/iot-flux/src/main.rs",
+                                            72u32,
+                                        ),
+                                        ::log::__private_api::Option::None,
+                                    );
+                                }
+                            };
+                        }
+                        __tokio_select_util::Out::Disabled => {
+                            ::core::panicking::panic_fmt(
+                                format_args!(
+                                    "all branches are disabled and there is no else branch",
+                                ),
+                            );
+                        }
+                        _ => {
+                            ::core::panicking::panic_fmt(
+                                format_args!(
+                                    "internal error: entered unreachable code: {0}",
+                                    format_args!("failed to match bind"),
+                                ),
+                            );
+                        }
+                    }
+                }
+            });
+        }
+        match tokio::signal::ctrl_c().await {
+            Ok(()) => {
+                {
+                    let lvl = ::log::Level::Info;
+                    if lvl <= ::log::STATIC_MAX_LEVEL && lvl <= ::log::max_level() {
+                        ::log::__private_api_log(
+                            format_args!("Shutting down..."),
+                            lvl,
+                            &("iot_flux", "iot_flux", "src/iot-flux/src/main.rs", 80u32),
+                            ::log::__private_api::Option::None,
+                        );
+                    }
+                };
+                token.cancel();
+            }
+            Err(err) => {
+                {
+                    ::std::io::_eprint(
+                        format_args!("Unable to listen for shutdown signal: {0}\n", err),
+                    );
+                };
+            }
+        }
+        {
+            let lvl = ::log::Level::Info;
+            if lvl <= ::log::STATIC_MAX_LEVEL && lvl <= ::log::max_level() {
+                ::log::__private_api_log(
+                    format_args!("Shutdown complete."),
+                    lvl,
+                    &("iot_flux", "iot_flux", "src/iot-flux/src/main.rs", 87u32),
+                    ::log::__private_api::Option::None,
+                );
+            }
+        };
+    };
+    #[allow(clippy::expect_used, clippy::diverging_sub_expression)]
+    {
+        return tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .expect("Failed building the Runtime")
+            .block_on(body);
+    }
+}
+async fn start_consuming_topic_queue(
+    index: usize,
+    amqp: Amqp,
+    mut callback: impl FnMut(DevicePayload) -> Result<(), Error>,
+) {
+    let channel = &amqp.get_channel().await.unwrap();
+    channel.basic_qos(RMQ_PREFETCH_COUNT, BasicQosOptions::default()).await.unwrap();
+    match amqp
+        .declare_exchange_with_channel(
+            channel,
+            RMQ_EXCHANGE_NAME,
+            lapin::ExchangeKind::Topic,
+            ExchangeDeclareOptions::default(),
+            FieldTable::default(),
+        )
+        .await
+    {
+        Ok(()) => {
+            let lvl = ::log::Level::Info;
+            if lvl <= ::log::STATIC_MAX_LEVEL && lvl <= ::log::max_level() {
+                ::log::__private_api_log(
+                    format_args!(
+                        "{0}: topic exchange <{1}> declared",
+                        index,
+                        RMQ_EXCHANGE_NAME,
+                    ),
+                    lvl,
+                    &("iot_flux", "iot_flux", "src/iot-flux/src/main.rs", 112u32),
+                    ::log::__private_api::Option::None,
+                );
+            }
+        }
+        Err(error) => {
+            let lvl = ::log::Level::Error;
+            if lvl <= ::log::STATIC_MAX_LEVEL && lvl <= ::log::max_level() {
+                ::log::__private_api_log(
+                    format_args!(
+                        "{0}: can\'t create topic exchange <{1}> {2}",
+                        index,
+                        RMQ_EXCHANGE_NAME,
+                        error,
+                    ),
+                    lvl,
+                    &("iot_flux", "iot_flux", "src/iot-flux/src/main.rs", 113u32),
+                    ::log::__private_api::Option::None,
+                );
+            }
+        }
+    };
+    let queue = match amqp
+        .declare_queue_with_channel(
+            channel,
+            RMQ_QUEUE_NAME,
+            QueueDeclareOptions::default(),
+            FieldTable::default(),
+        )
+        .await
+    {
+        Ok(queue) => {
+            {
+                let lvl = ::log::Level::Info;
+                if lvl <= ::log::STATIC_MAX_LEVEL && lvl <= ::log::max_level() {
+                    ::log::__private_api_log(
+                        format_args!(
+                            "{0}: metrics queue <{1}> declared",
+                            index,
+                            queue.name(),
+                        ),
+                        lvl,
+                        &("iot_flux", "iot_flux", "src/iot-flux/src/main.rs", 128u32),
+                        ::log::__private_api::Option::None,
+                    );
+                }
+            };
+            queue
+        }
+        Err(error) => {
+            {
+                let lvl = ::log::Level::Error;
+                if lvl <= ::log::STATIC_MAX_LEVEL && lvl <= ::log::max_level() {
+                    ::log::__private_api_log(
+                        format_args!(
+                            "{0}: can\'t create metrics queue <{1}> {2}",
+                            index,
+                            RMQ_QUEUE_NAME,
+                            error,
+                        ),
+                        lvl,
+                        &("iot_flux", "iot_flux", "src/iot-flux/src/main.rs", 132u32),
+                        ::log::__private_api::Option::None,
+                    );
+                }
+            };
+            {
+                ::core::panicking::panic_display(&error);
+            }
+        }
+    };
+    match amqp
+        .bind_queue_with_channel(
+            channel,
+            queue.name().as_str(),
+            RMQ_EXCHANGE_NAME,
+            "#.telemetry.v1",
+            QueueBindOptions::default(),
+            FieldTable::default(),
+        )
+        .await
+    {
+        Ok(()) => {
+            let lvl = ::log::Level::Info;
+            if lvl <= ::log::STATIC_MAX_LEVEL && lvl <= ::log::max_level() {
+                ::log::__private_api_log(
+                    format_args!(
+                        "{0}: topic exchange <{1}> and metric queue <{2}> binded",
+                        index,
+                        RMQ_EXCHANGE_NAME,
+                        queue.name(),
+                    ),
+                    lvl,
+                    &("iot_flux", "iot_flux", "src/iot-flux/src/main.rs", 151u32),
+                    ::log::__private_api::Option::None,
+                );
+            }
+        }
+        Err(error) => {
+            {
+                let lvl = ::log::Level::Error;
+                if lvl <= ::log::STATIC_MAX_LEVEL && lvl <= ::log::max_level() {
+                    ::log::__private_api_log(
+                        format_args!(
+                            "{0}: can\'t create binding <{1}> <{2}> {3}",
+                            index,
+                            RMQ_EXCHANGE_NAME,
+                            RMQ_QUEUE_NAME,
+                            error,
+                        ),
+                        lvl,
+                        &("iot_flux", "iot_flux", "src/iot-flux/src/main.rs", 158u32),
+                        ::log::__private_api::Option::None,
+                    );
+                }
+            };
+            {
+                ::core::panicking::panic_display(&error);
+            }
+        }
+    };
+    let mut consumer = match amqp
+        .create_consumer_with_channel(
+            channel,
+            RMQ_QUEUE_NAME,
+            "",
+            BasicConsumeOptions::default(),
+            FieldTable::default(),
+        )
+        .await
+    {
+        Ok(consumer) => {
+            {
+                let lvl = ::log::Level::Info;
+                if lvl <= ::log::STATIC_MAX_LEVEL && lvl <= ::log::max_level() {
+                    ::log::__private_api_log(
+                        format_args!(
+                            "{0}: consumer <{1}> declared",
+                            index,
+                            consumer.tag(),
+                        ),
+                        lvl,
+                        &("iot_flux", "iot_flux", "src/iot-flux/src/main.rs", 177u32),
+                        ::log::__private_api::Option::None,
+                    );
+                }
+            };
+            {
+                let lvl = ::log::Level::Info;
+                if lvl <= ::log::STATIC_MAX_LEVEL && lvl <= ::log::max_level() {
+                    ::log::__private_api_log(
+                        format_args!(
+                            "{0}: consumer <{1}> to queue <{2}> binded",
+                            index,
+                            consumer.tag(),
+                            queue.name(),
+                        ),
+                        lvl,
+                        &("iot_flux", "iot_flux", "src/iot-flux/src/main.rs", 178u32),
+                        ::log::__private_api::Option::None,
+                    );
+                }
+            };
+            consumer
+        }
+        Err(error) => {
+            {
+                let lvl = ::log::Level::Error;
+                if lvl <= ::log::STATIC_MAX_LEVEL && lvl <= ::log::max_level() {
+                    ::log::__private_api_log(
+                        format_args!(
+                            "{0}: can\'t bind consumer and queue <{1}> {2}",
+                            index,
+                            queue.name(),
+                            error,
+                        ),
+                        lvl,
+                        &("iot_flux", "iot_flux", "src/iot-flux/src/main.rs", 187u32),
+                        ::log::__private_api::Option::None,
+                    );
+                }
+            };
+            {
+                ::core::panicking::panic_display(&error);
+            }
+        }
+    };
+    {
+        let lvl = ::log::Level::Info;
+        if lvl <= ::log::STATIC_MAX_LEVEL && lvl <= ::log::max_level() {
+            ::log::__private_api_log(
+                format_args!("{0}: consumer <{1}> is liscening", index, consumer.tag()),
+                lvl,
+                &("iot_flux", "iot_flux", "src/iot-flux/src/main.rs", 198u32),
+                ::log::__private_api::Option::None,
+            );
+        }
+    };
+    while let Some(delivery) = consumer.next().await {
+        if let Ok(delivery) = delivery {
+            let payload: Vec<u8> = delivery.data.clone();
+            let uncompressed_message = match delivery
+                .properties
+                .content_encoding()
+                .clone()
+                .unwrap_or_else(|| ShortString::from(""))
+                .as_str()
+            {
+                "br" => amqp.decompress_message_as_str(payload),
+                _ => Ok(String::from_utf8(payload).unwrap()),
+            }
+                .unwrap();
+            let device_payload: DevicePayload = serde_json::from_str(
+                    &uncompressed_message,
+                )
+                .unwrap();
+            {
+                let lvl = ::log::Level::Debug;
+                if lvl <= ::log::STATIC_MAX_LEVEL && lvl <= ::log::max_level() {
+                    ::log::__private_api_log(
+                        format_args!("{0}: {1:?}", index, device_payload),
+                        lvl,
+                        &("iot_flux", "iot_flux", "src/iot-flux/src/main.rs", 216u32),
+                        ::log::__private_api::Option::None,
+                    );
+                }
+            };
+            callback(device_payload).unwrap();
+            match channel
+                .basic_ack(delivery.delivery_tag, BasicAckOptions::default())
+                .await
+            {
+                Ok(()) => {
+                    let lvl = ::log::Level::Trace;
+                    if lvl <= ::log::STATIC_MAX_LEVEL && lvl <= ::log::max_level() {
+                        ::log::__private_api_log(
+                            format_args!(
+                                "{0}: acknowledged message <{1}>",
+                                index,
+                                delivery.delivery_tag,
+                            ),
+                            lvl,
+                            &(
+                                "iot_flux",
+                                "iot_flux",
+                                "src/iot-flux/src/main.rs",
+                                222u32,
+                            ),
+                            ::log::__private_api::Option::None,
+                        );
+                    }
+                }
+                Err(error) => {
+                    let lvl = ::log::Level::Error;
+                    if lvl <= ::log::STATIC_MAX_LEVEL && lvl <= ::log::max_level() {
+                        ::log::__private_api_log(
+                            format_args!(
+                                "{0}: can\'t acknowledge message <{1}> {2}",
+                                index,
+                                delivery.delivery_tag,
+                                error,
+                            ),
+                            lvl,
+                            &(
+                                "iot_flux",
+                                "iot_flux",
+                                "src/iot-flux/src/main.rs",
+                                227u32,
+                            ),
+                            ::log::__private_api::Option::None,
+                        );
+                    }
+                }
+            };
+        }
+    }
+    {
+        let lvl = ::log::Level::Debug;
+        if lvl <= ::log::STATIC_MAX_LEVEL && lvl <= ::log::max_level() {
+            ::log::__private_api_log(
+                format_args!("{0}: Shutting down...", index),
+                lvl,
+                &("iot_flux", "iot_flux", "src/iot-flux/src/main.rs", 234u32),
+                ::log::__private_api::Option::None,
+            );
+        }
+    };
+}
+fn push_to_puthost(sender: &mut Sender, payload: DevicePayload) -> Result<(), Error> {
+    let mut buffer = Buffer::new();
+    let timestamp = payload.timestamp;
+    let device_id = payload.device_id;
+    for sensor in payload.payload {
+        let sensor_id = sensor.0;
+        let value = sensor.1;
+        buffer
+            .table("Datapoint")?
+            .column_i64("device_id", device_id)?
+            .column_i64("sensor_id", sensor_id)?
+            .column_f64("value", value)?
+            .at(TimestampNanos::new(timestamp).unwrap())?;
+    }
+    sender.flush(&mut buffer)?;
+    Ok(())
+}

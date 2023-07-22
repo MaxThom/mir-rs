@@ -3,8 +3,12 @@
     "rust-analyzer.linkedProjects": [
         "./src/iot-flux/Cargo.toml",
         "./src/iot-swarmer/Cargo.toml",
-        "./src/iot-oxi/Cargo.toml",
+        "./src/dv-oxi/Cargo.toml",
+        "./src/lib-oxi/Cargo.toml",
+        "./src/dv-dizer/Cargo.toml",
+        "./src/lib-dizer/Cargo.toml",
         "./src/iot-redox/Cargo.toml",
         "./src/y/Cargo.toml",
-    ]
+    ],
+    "editor.inlayHints.enabled": "offUnlessPressed"    
 }

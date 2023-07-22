@@ -1,3 +1,9 @@
+oxi:
+	cargo run --bin dv-oxi -- -c ./configs/local_oxi.yaml
+
+dizer:
+	cargo run --bin dv-dizer -- -c ./configs/local_dizer.yaml
+
 flux:
 	cargo run --bin iot-flux -- -c ./configs/local_flux.yaml
 

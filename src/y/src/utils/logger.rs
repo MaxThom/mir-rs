@@ -1,5 +1,5 @@
 use fern::colors::{Color, ColoredLevelConfig};
-use std::time::{SystemTime};
+use std::time::SystemTime;
 
 pub fn setup_logger(log_level: String) -> Result<(), fern::InitError> {
     let level = match log_level.to_lowercase().trim() {

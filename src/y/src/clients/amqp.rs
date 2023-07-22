@@ -21,7 +21,7 @@ use serde::Deserialize;
 use thiserror::Error as ThisError;
 use tokio_amqp::*;
 
-use crate::utils::serialization::{self, SerializationKind};
+use crate::utils::serialization::SerializationKind;
 
 #[derive(ThisError, Debug)]
 pub enum AmqpError {
