@@ -97,6 +97,10 @@ impl Amqp {
         Amqp { pool }
     }
 
+    pub fn close(&self) {
+        self.pool.close();
+    }
+
     pub async fn get_connection(&self) -> Result<Object, AmqpError> {
         let connection = self.pool.get().await?;
         Ok(connection)

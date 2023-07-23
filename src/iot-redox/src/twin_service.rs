@@ -1,18 +1,14 @@
 use std::sync::{Arc, Mutex};
 
 use chrono::Utc;
-use log::{debug, info};
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
-use serde_json::Value;
 use surrealdb::sql::Thing;
 use surrealdb::{engine::remote::ws::Client, opt::PatchOp, Surreal};
 use thiserror::Error as ThisError;
-use y::models::device_twin::{
-    ConnectionState, MetaProperties, Properties, StatusReason, TargetProperties,
-};
-use y::models::NewDevice;
-use y::models::{device_twin::Record, DeviceTwin};
+use x::device_twin::DeviceTwin;
+use x::device_twin::NewDevice;
+use x::device_twin::{ConnectionState, MetaProperties, Properties, StatusReason, TargetProperties};
 
 const DEVICE_ID_KEY: &str = "device_id";
 const ETAG_KEY: &str = "etag";

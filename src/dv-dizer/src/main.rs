@@ -1,7 +1,10 @@
-use dizer::DizerBuilder;
-use log::info;
+use dizer::{builder::DizerShipyard, dizer::Dizer};
+use log::{debug, error, info, trace};
 use thiserror::Error as ThisError;
+use tokio::time::{sleep, Duration};
 use tokio_util::sync::CancellationToken;
+use x::telemetry::Telemetry;
+use y::utils::telemetry::{PyramidTelemetryGenerator, TelemetryGenerator};
 
 #[derive(ThisError, Debug)]
 enum Error {}
@@ -26,12 +29,15 @@ enum Error {}
 // - implement logging using log interface
 // - implement send metrics
 //
+// TODO: Add desired properties handler
+// TODO: Add send reported properties
+// TODO: Send heartbeat
+//
 #[tokio::main]
 async fn main() -> Result<(), String> {
-    // Init token, logger & config
+    // Init token & dizer
     let token = CancellationToken::new();
-
-    let dizer_builder = DizerBuilder::default()
+    let dizer_builder = DizerShipyard::new()
         .with_cli()
         .with_config_file("")
         .with_device_id("012xwf===")
@@ -44,19 +50,30 @@ async fn main() -> Result<(), String> {
     }
     let mut dizer = dizer_builder.unwrap();
 
-    // TODO: Add desired properties handler
-    // TODO: Add send telemetry
-    // TODO: Add send reported properties
-    // TODO: Send heartbeat
-
+    // Connect to mir
     if let Err(x) = dizer.join_fleet().await {
         return Err(format!("error joining fleet: {}", x));
     }
 
+    // Do stuff
+    let cloned_token = token.clone();
+    let dizer_clone = dizer.clone();
+    tokio::spawn(async move {
+        tokio::select! {
+            _ = cloned_token.cancelled() => {
+                debug!("The token was shutdown")
+            }
+            _ = send_random_telemetry(dizer_clone) => {
+                debug!("device shuting down...");
+            }
+        }
+    });
+
+    // Wait for shutdown signal
     info!("Press ctrl+c to shutdown.");
     match tokio::signal::ctrl_c().await {
         Ok(()) => {
-            info!("Dizer shutting down...");
+            let _ = dizer.leave_fleet().await;
             token.cancel();
         }
         Err(err) => {
@@ -66,4 +83,19 @@ async fn main() -> Result<(), String> {
     info!("Shutdown complete.");
 
     Ok(())
+}
+
+async fn send_random_telemetry(dizer: Dizer) {
+    let mut gen = PyramidTelemetryGenerator::new(1.0, 0.0, 100.0).unwrap();
+    loop {
+        let mut tlm = Telemetry::default();
+        tlm.floats.insert(0, gen.next_datapoint());
+
+        match dizer.send_telemetry(tlm).await {
+            Ok(msg) => trace!("{}", msg),
+            Err(error) => error!("{}", error),
+        };
+
+        sleep(Duration::from_secs(5)).await;
+    }
 }

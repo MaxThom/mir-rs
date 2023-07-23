@@ -10,8 +10,8 @@ use thiserror::Error as ThisError;
 use tokio_util::sync::CancellationToken;
 use y::utils::setup_cli;
 
+use x::telemetry::DeviceTelemetry;
 use y::clients::amqp::Amqp;
-use y::models::DevicePayload;
 use y::utils::config::{setup_config, FileFormat};
 use y::utils::logger::setup_logger;
 use y::utils::network;
@@ -33,7 +33,7 @@ pub struct Settings {
 }
 
 const APP_NAME: &str = "flux";
-const RMQ_EXCHANGE_NAME: &str = "iot";
+const RMQ_EXCHANGE_NAME: &str = "iot-stream";
 const RMQ_QUEUE_NAME: &str = "iot-q-telemetry";
 const RMQ_PREFETCH_COUNT: u16 = 10;
 
@@ -90,7 +90,7 @@ async fn main() {
 async fn start_consuming_topic_queue(
     index: usize,
     amqp: Amqp,
-    mut callback: impl FnMut(DevicePayload) -> Result<(), Error>,
+    mut callback: impl FnMut(DeviceTelemetry) -> Result<(), Error>,
 ) {
     // TODO: Could implement better TCP Connection and Ch
     // Get channel and declare topic, queue, binding and consumer
@@ -211,7 +211,7 @@ async fn start_consuming_topic_queue(
             }
             .unwrap();
 
-            let device_payload: DevicePayload =
+            let device_payload: DeviceTelemetry =
                 serde_json::from_str(&uncompressed_message).unwrap();
             debug!("{}: {:?}", index, device_payload);
             callback(device_payload).unwrap();
@@ -234,16 +234,16 @@ async fn start_consuming_topic_queue(
     debug!("{}: Shutting down...", index);
 }
 
-fn push_to_puthost(sender: &mut Sender, payload: DevicePayload) -> Result<(), Error> {
+fn push_to_puthost(sender: &mut Sender, payload: DeviceTelemetry) -> Result<(), Error> {
     let mut buffer = Buffer::new();
     let timestamp = payload.timestamp;
     let device_id = payload.device_id;
-    for sensor in payload.payload {
+    for sensor in payload.telemetry.floats {
         let sensor_id = sensor.0;
         let value = sensor.1;
         buffer
             .table("Datapoint")?
-            .column_i64("device_id", device_id)?
+            .column_str("device_id", device_id.to_string())?
             .column_i64("sensor_id", sensor_id)?
             .column_f64("value", value)?
             .at(TimestampNanos::new(timestamp).unwrap())?;

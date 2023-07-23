@@ -7,6 +7,7 @@ edition = "2021"
 
 [dependencies]
 y = { path = "../y" }
+x = { path = "../x" }
 lapin = "2.1.1"
 deadpool = "0.9.5"
 deadpool-lapin = "0.10.0"

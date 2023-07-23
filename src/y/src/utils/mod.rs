@@ -1,3 +1,4 @@
+pub mod telemetry;
 // This expose PostMQ directly in clients
 pub use cli::setup_cli;
 pub use config::setup_config;

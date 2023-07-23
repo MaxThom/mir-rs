@@ -10,8 +10,8 @@ use thiserror::Error as ThisError;
 use tokio::time::{sleep, Duration};
 use tokio_util::sync::CancellationToken;
 
+use x::telemetry::DeviceTelemetry;
 use y::clients::amqp::Amqp;
-use y::models::DevicePayload;
 use y::utils::config::{setup_config, FileFormat};
 use y::utils::logger::setup_logger;
 
@@ -107,13 +107,13 @@ async fn start_device(amqp: Amqp, index: u32, global_index: i64, template: Devic
     // Telemetry Loop
     loop {
         // Generate
-        let mut payload = DevicePayload::default();
-        payload.device_id = device.id.clone();
+        let mut payload = DeviceTelemetry::default();
+        payload.device_id = format!("{}", device.id.clone());
         //payload.timestamp = Utc::now().to_string();
         payload.timestamp = Utc::now().timestamp_nanos();
         for sensor in &mut device.sensors {
             let x = sensor.telemetry.next_datapoint();
-            payload.payload.insert(sensor.id.clone(), x);
+            payload.telemetry.floats.insert(sensor.id, x);
         }
         info!("{:?}", payload);
 

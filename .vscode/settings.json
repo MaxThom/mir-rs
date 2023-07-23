@@ -9,6 +9,7 @@
         "./src/lib-dizer/Cargo.toml",
         "./src/iot-redox/Cargo.toml",
         "./src/y/Cargo.toml",
+        "./src/lib-dizer/Cargo.toml"
     ],
     "editor.inlayHints.enabled": "offUnlessPressed"    
 }

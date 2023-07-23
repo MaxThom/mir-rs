@@ -15,11 +15,11 @@ use log::{debug, error, info, trace};
 use thiserror::Error as ThisError;
 use tokio_util::sync::CancellationToken;
 
+use x::telemetry::DeviceTelemetry;
 use y::clients::amqp::{
     Amqp, AmqpSettings, ChannelSettings, ConsumerSettings, ExchangeSettings, QueueBindSettings,
     QueueSettings,
 };
-use y::models::DevicePayload;
 use y::utils::cli::setup_cli;
 use y::utils::config::{setup_config, FileFormat};
 use y::utils::logger::setup_logger;
@@ -291,7 +291,7 @@ async fn start_consuming_topic_queue_reported(index: usize, amqp: Amqp) {
     debug!("{}: Shutting down...", index);
 }
 
-fn push_to_puthost(sender: &str, payload: DevicePayload) -> Result<(), Error> {
+fn push_to_puthost(sender: &str, payload: DeviceTelemetry) -> Result<(), Error> {
     debug!("{}: {:?}", sender, payload);
     Ok(())
 }
