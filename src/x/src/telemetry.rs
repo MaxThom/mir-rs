@@ -18,3 +18,9 @@ pub struct Telemetry {
     pub bools: HashMap<i64, bool>,
     pub strings: HashMap<i64, String>,
 }
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct DeviceHeartbeat {
+    pub device_id: String,
+    pub timestamp: i64,
+}

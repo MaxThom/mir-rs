@@ -1,9 +1,20 @@
 use crate::error::DizerError;
 use chrono::Utc;
-use log::{debug, info};
+use log::{debug, error, info};
 use serde::Deserialize;
-use x::telemetry::{DeviceTelemetry, Telemetry};
+use std::time::Duration;
+use tokio::time;
+use x::telemetry::{DeviceHeartbeat, DeviceTelemetry, Telemetry};
 use y::clients::amqp::Amqp;
+
+const RMQ_TWIN_EXCHANGE_NAME: &str = "iot-twin";
+const RMQ_STREAM_EXCHANGE_NAME: &str = "iot-stream";
+const RMQ_STREAM_ROUTING_KEY: &str = "dizer.telemetry.v1";
+//const RMQ_TWIN_META_QUEUE_NAME: &str = "iot-q-twin-meta";
+//const RMQ_TWIN_DESIRED_QUEUE_NAME: &str = "iot-q-twin-desired";
+//const RMQ_TWIN_REPORTED_QUEUE_NAME: &str = "iot-q-twin-reported";
+
+const HEATHBEAT_INTERVAL: Duration = Duration::from_secs(60 * 5);
 
 #[derive(Debug, Clone)]
 pub struct Dizer {
@@ -29,6 +40,9 @@ impl Dizer {
             .await
             .map_err(|_| DizerError::CantConnectToMir)?;
         debug!("{:?}", test.status());
+
+        setup_heartbeat_task(self.clone());
+
         info!(
             "{} (Class Dizer) has joined the fleet 🚀.",
             self.config.device_id
@@ -59,11 +73,48 @@ impl Dizer {
         debug!("{:?}", str_payload);
         match self
             .amqp
-            .send_message(&str_payload, "iot-stream", "dizer.telemetry.v1")
+            .send_message(
+                &str_payload,
+                RMQ_STREAM_EXCHANGE_NAME,
+                RMQ_STREAM_ROUTING_KEY,
+            )
             .await
         {
             Ok(x) => Ok(x),
             Err(_) => Err(DizerError::TelemetrySent), // TODO: Add error type to telemetry sent
         }
     }
+
+    async fn send_hearthbeat(&self) -> Result<&str, DizerError> {
+        let payload = DeviceHeartbeat {
+            device_id: self.config.device_id.clone(),
+            timestamp: Utc::now().timestamp_nanos(),
+        };
+
+        // Serialize & Send
+        let str_payload = serde_json::to_string(&payload).unwrap();
+        debug!("{:?}", str_payload);
+        match self
+            .amqp
+            .send_message(&str_payload, RMQ_TWIN_EXCHANGE_NAME, RMQ_STREAM_ROUTING_KEY)
+            .await
+        {
+            Ok(x) => Ok(x),
+            Err(_) => Err(DizerError::HeathbeatSent), // TODO: Add error type to telemetry sent
+        }
+    }
+}
+
+fn setup_heartbeat_task(dizer: Dizer) {
+    tokio::spawn(async move {
+        let mut interval = time::interval(HEATHBEAT_INTERVAL);
+
+        loop {
+            interval.tick().await;
+            debug!("HEATHBEAT");
+            if let Err(x) = dizer.send_hearthbeat().await {
+                error!("error sending heartbeat: {}", x);
+            }
+        }
+    });
 }

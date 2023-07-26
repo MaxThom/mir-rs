@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use axum::routing::post;
 use axum::{routing::get, Router};
 use lapin::ExchangeKind;
 use serde::Deserialize;

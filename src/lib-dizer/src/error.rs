@@ -33,6 +33,7 @@ pub enum DizerError {
     // TODO: add address param for display
     CantConnectToMir,
     TelemetrySent,
+    HeathbeatSent,
     Unknown,
 }
 
@@ -48,6 +49,9 @@ impl fmt::Display for DizerError {
             DizerError::TelemetrySent => {
                 write!(f, "error sending telemetry")
             }
+            DizerError::HeathbeatSent => {
+                write!(f, "error sending heartbeat")
+            }
         }
     }
 }
@@ -58,6 +62,7 @@ impl error::Error for DizerError {
             DizerError::CantConnectToMir => None,
             DizerError::Unknown => None,
             DizerError::TelemetrySent => None,
+            DizerError::HeathbeatSent => None,
         }
     }
 }

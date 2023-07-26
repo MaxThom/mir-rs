@@ -24,9 +24,15 @@
 
 ## Dizer
 
-- [ ] create builder pattern for dizer
+- [x] create builder pattern for dizer
 - [x] config, logging, cli
-- [ ] 
+- [x] send telemetry
+- [x] heartbeat + metadata
+- [ ] retrieve desired properties
+  - connect to desired properties queue. [See ADR-11], --> no need for persistent queue if device disconect
+  - get desired properties using rest api
+  - both type of getting properties are receive in the same callback
+- [ ] update reported properties
 
 ## Cockpit
 
