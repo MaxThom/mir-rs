@@ -7,14 +7,15 @@ use tokio::time;
 use x::telemetry::{DeviceHeartbeat, DeviceTelemetry, Telemetry};
 use y::clients::amqp::Amqp;
 
-const RMQ_TWIN_EXCHANGE_NAME: &str = "iot-twin";
 const RMQ_STREAM_EXCHANGE_NAME: &str = "iot-stream";
 const RMQ_STREAM_ROUTING_KEY: &str = "dizer.telemetry.v1";
-//const RMQ_TWIN_META_QUEUE_NAME: &str = "iot-q-twin-meta";
+
+const RMQ_TWIN_EXCHANGE_NAME: &str = "iot-twin";
+const RMQ_TWIN_HEARTHBEAT_ROUTING_KEY: &str = "dizer.hearthbeat.v1";
 //const RMQ_TWIN_DESIRED_QUEUE_NAME: &str = "iot-q-twin-desired";
 //const RMQ_TWIN_REPORTED_QUEUE_NAME: &str = "iot-q-twin-reported";
 
-const HEATHBEAT_INTERVAL: Duration = Duration::from_secs(60 * 5);
+const HEARTHBEAT_INTERVAL: Duration = Duration::from_secs(60);
 
 #[derive(Debug, Clone)]
 pub struct Dizer {
@@ -96,7 +97,11 @@ impl Dizer {
         debug!("{:?}", str_payload);
         match self
             .amqp
-            .send_message(&str_payload, RMQ_TWIN_EXCHANGE_NAME, RMQ_STREAM_ROUTING_KEY)
+            .send_message(
+                &str_payload,
+                RMQ_TWIN_EXCHANGE_NAME,
+                RMQ_TWIN_HEARTHBEAT_ROUTING_KEY,
+            )
             .await
         {
             Ok(x) => Ok(x),
@@ -107,11 +112,11 @@ impl Dizer {
 
 fn setup_heartbeat_task(dizer: Dizer) {
     tokio::spawn(async move {
-        let mut interval = time::interval(HEATHBEAT_INTERVAL);
+        let mut interval = time::interval(HEARTHBEAT_INTERVAL);
 
         loop {
             interval.tick().await;
-            debug!("HEATHBEAT");
+            debug!("HEARTHBEAT");
             if let Err(x) = dizer.send_hearthbeat().await {
                 error!("error sending heartbeat: {}", x);
             }

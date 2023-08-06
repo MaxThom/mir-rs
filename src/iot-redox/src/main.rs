@@ -14,7 +14,7 @@ use log::{debug, error, info, trace};
 use thiserror::Error as ThisError;
 use tokio_util::sync::CancellationToken;
 
-use x::telemetry::DeviceTelemetry;
+use x::telemetry::{DeviceHeartbeat, DeviceTelemetry};
 use y::clients::amqp::{
     Amqp, AmqpSettings, ChannelSettings, ConsumerSettings, ExchangeSettings, QueueBindSettings,
     QueueSettings,
@@ -54,10 +54,13 @@ pub struct Settings {
 }
 
 const APP_NAME: &str = "redox";
+
 const RMQ_TWIN_EXCHANGE_NAME: &str = "iot-twin";
-const RMQ_DEVICE_EXCHANGE_NAME: &str = "iot-devices";
-const RMQ_TWIN_META_QUEUE_NAME: &str = "iot-q-twin-meta";
-const RMQ_TWIN_REPORTED_QUEUE_NAME: &str = "iot-q-twin-reported";
+const RMQ_TWIN_HEARTHBEAT_QUEUE_NAME: &str = "iot-q-hearthbeat";
+const RMQ_TWIN_HEATHBEAT_ROUTING_KEY: &str = "#.hearthbeat.v1";
+const RMQ_TWIN_REPORTED_QUEUE_NAME: &str = "iot-q-reported";
+const RMQ_TWIN_REPORTED_ROUTING_KEY: &str = "#.reported.v1";
+
 const RMQ_PREFETCH_COUNT: u16 = 10;
 
 use std::path::PathBuf;
@@ -66,6 +69,7 @@ use std::path::PathBuf;
 // docker run --rm --pull always -p 80:8000 -v ./surrealdb:/opt/surrealdb/ surrealdb/surrealdb:latest start --log trace --user root --pass root file:/opt/surrealdb/iot.db
 // curl -X POST -u "root:root" -H "NS: iot" -H "DB: iot" -H "Accept: application/json" -d "SELECT * FROM device_twin" localhost:80/sql
 // curl -X POST -u "root:root" -H "NS: iot" -H "DB: iot" -H "Accept: application/json" -d "SELECT * FROM type::table(device_twin) WHERE meta_properties.device_id = pig5" localhost:80/sql
+//
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
@@ -103,26 +107,6 @@ async fn main() -> Result<(), Error> {
     .await?;
     db.use_ns("iot").use_db("iot").await?;
     info!("connected to SurrealDb");
-
-    // Exchange for device comms
-    let test = amqp.get_connection().await.unwrap();
-    println!("{:?}", test.status());
-
-    let ch = amqp.get_channel().await.unwrap();
-    match amqp
-        .declare_exchange_with_channel(
-            &ch,
-            RMQ_DEVICE_EXCHANGE_NAME,
-            lapin::ExchangeKind::Topic,
-            ExchangeDeclareOptions::default(),
-            FieldTable::default(),
-        )
-        .await
-    {
-        Ok(()) => info!("topic exchange <iot-devices> declared"),
-        Err(error) => error!("can't create topic exchange <iot-devices> {}", error),
-    };
-    println!("ASDASD");
 
     // Task for Meta queue
     for i in 0..settings.thread_count.meta_queue {
@@ -179,6 +163,7 @@ async fn main() -> Result<(), Error> {
         )
         .route("/devicetwins/records", get(api::get_records))
         .with_state(shared_state);
+
     let cloned_token = token.clone();
     tokio::spawn(async move {
         tokio::select! {
@@ -231,12 +216,12 @@ async fn start_consuming_topic_queue_meta(index: usize, amqp: Amqp) {
             arguments: FieldTable::default(),
         },
         queue: QueueSettings {
-            name: RMQ_TWIN_META_QUEUE_NAME,
+            name: RMQ_TWIN_HEARTHBEAT_QUEUE_NAME,
             options: QueueDeclareOptions::default(),
             arguments: FieldTable::default(),
         },
         queue_bind: QueueBindSettings {
-            routing_key: "#.twin_meta.v1",
+            routing_key: RMQ_TWIN_HEATHBEAT_ROUTING_KEY,
             options: QueueBindOptions::default(),
             arguments: FieldTable::default(),
         },
@@ -246,9 +231,9 @@ async fn start_consuming_topic_queue_meta(index: usize, amqp: Amqp) {
             arguments: FieldTable::default(),
         },
     };
-
+    debug!("{}: Starting...", index);
     amqp.consume_topic_queue(index, settings, SerializationKind::Json, move |payload| {
-        push_to_puthost("sender", payload)
+        receive_hearthbeat("sender", payload)
     })
     .await;
     debug!("{}: Shutting down...", index);
@@ -288,6 +273,11 @@ async fn start_consuming_topic_queue_reported(index: usize, amqp: Amqp) {
     })
     .await;
     debug!("{}: Shutting down...", index);
+}
+
+fn receive_hearthbeat(sender: &str, payload: DeviceHeartbeat) -> Result<(), Error> {
+    debug!("{}: {:?}", sender, payload);
+    Ok(())
 }
 
 fn push_to_puthost(sender: &str, payload: DeviceTelemetry) -> Result<(), Error> {

@@ -9,7 +9,7 @@
   - [x] send a message to the device with updated desired properties
 - [ ] read reported properties messages
   - [ ] update reported properties of device twin in db
-- [ ] read meta messages
+- [x] read meta messages
   - [ ] update device_twin meta section with heartbeat
 
 ## Swarm
