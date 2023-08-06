@@ -11,7 +11,7 @@ use surrealdb::{engine::remote::ws::Client, Surreal};
 use x::device_twin::{MetaProperties, NewDevice, Properties, Record, TargetProperties};
 use y::clients::amqp::Amqp;
 
-use crate::{twin_service::*, RMQ_DEVICE_EXCHANGE_NAME};
+use crate::{twin_service::*, RMQ_TWIN_EXCHANGE_NAME};
 
 pub struct ApiState {
     pub amqp: Amqp,
@@ -140,8 +140,8 @@ pub async fn update_device_twins_properties(
             .amqp
             .send_message(
                 &str_payload,
-                RMQ_DEVICE_EXCHANGE_NAME,
-                &format!("{}.devices.v1", etag.as_str()),
+                RMQ_TWIN_EXCHANGE_NAME,
+                &format!("{}.desired.v1", etag.as_str()),
             )
             .await
         {
