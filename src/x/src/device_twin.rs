@@ -87,7 +87,6 @@ pub struct DeviceTwin {
 pub struct MetaProperties {
     pub device_id: String,
     pub model_id: String,
-    pub etag: String,
     pub status: Status,
     pub status_reason: StatusReason,
     pub status_update_time: i64,

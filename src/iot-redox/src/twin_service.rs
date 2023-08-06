@@ -1,6 +1,7 @@
 use std::sync::{Arc, Mutex};
 
 use chrono::Utc;
+use log::info;
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
 use surrealdb::sql::Thing;
@@ -11,7 +12,6 @@ use x::device_twin::NewDevice;
 use x::device_twin::{ConnectionState, MetaProperties, Properties, StatusReason, TargetProperties};
 
 const DEVICE_ID_KEY: &str = "device_id";
-const ETAG_KEY: &str = "etag";
 
 #[derive(ThisError, Debug)]
 
@@ -47,10 +47,10 @@ pub async fn get_device_twins_from_db(
 
 pub async fn get_device_twins_with_id_from_db(
     db: &Surreal<Client>,
-    etag: &str,
+    device_id: &str,
 ) -> Result<Option<DeviceTwin>, surrealdb::Error> {
     // Return all device twins meta
-    let twin: Option<DeviceTwin> = db.select(("device_twin", etag)).await?;
+    let twin: Option<DeviceTwin> = db.select(("device_twin", device_id)).await?;
     Ok(twin)
 }
 
@@ -58,9 +58,9 @@ pub async fn create_device_twins_in_db(
     db: Surreal<Client>,
     payload: NewDevice,
 ) -> Result<Option<DeviceTwin>, TwinServiceError> {
-    let etag: String = generate_threadsafe_random_string();
+    //let device_id: String = generate_threadsafe_random_string();
 
-    let id = Thing::from((String::from("device_twin"), etag));
+    let id = Thing::from((String::from("device_twin"), payload.device_id.clone()));
     println!("id: {:?}", id);
 
     let x = DeviceTwin {
@@ -68,7 +68,6 @@ pub async fn create_device_twins_in_db(
         meta_properties: Some(MetaProperties {
             device_id: payload.device_id.clone(),
             model_id: payload.model_id,
-            etag: id.id.to_string(),
             status: payload.status,
             status_reason: StatusReason::Provisioned,
             status_update_time: Utc::now().timestamp_nanos(),
@@ -88,11 +87,11 @@ pub async fn create_device_twins_in_db(
 
 pub async fn update_device_twins_properties_in_db(
     db: Surreal<Client>,
-    etag: &str,
+    device_id: &str,
     target: &TargetProperties,
     properties: &Properties,
 ) -> Result<Option<DeviceTwin>, TwinServiceError> {
-    //let updated: Record = db.update(("device_twin", etag)).merge(device_twin).await?;
+    //let updated: Record = db.update(("device_twin", device_id)).merge(device_twin).await?;
 
     // A timestamp could be saved with each properties and version
     // This timestamp would be compare with the oie stored and only update if newer
@@ -102,7 +101,7 @@ pub async fn update_device_twins_properties_in_db(
     // If version is newer, update
     // Client add their +1 to the version
     // If version is older, return error -> please refresh twin for more recent change
-    let device = get_device_twins_with_id_from_db(&db, etag).await?;
+    let device = get_device_twins_with_id_from_db(&db, device_id).await?;
     if let Some(device) = device {
         let current_version: usize = match target {
             TargetProperties::Desired => device.desired_properties.unwrap().version,
@@ -120,11 +119,11 @@ pub async fn update_device_twins_properties_in_db(
             ));
         }
     } else {
-        return Err(TwinServiceError::RecordNotFound(etag.to_string()));
+        return Err(TwinServiceError::RecordNotFound(device_id.to_string()));
     }
 
     let updated: Result<Option<DeviceTwin>, surrealdb::Error> = db
-        .update(("device_twin", etag))
+        .update(("device_twin", device_id))
         .patch(PatchOp::replace(
             format!("/{}", target.as_device_twin_route()).as_str(),
             properties,
@@ -144,9 +143,9 @@ pub async fn update_device_twins_properties_in_db(
 
 pub async fn delete_device_twins_in_db(
     db: Surreal<Client>,
-    etag: &str,
+    device_id: &str,
 ) -> Result<Option<DeviceTwin>, TwinServiceError> {
-    let deleted: Option<DeviceTwin> = db.delete(("device_twin", etag)).await?;
+    let deleted: Option<DeviceTwin> = db.delete(("device_twin", device_id)).await?;
 
     dbg!(&deleted);
     Ok(deleted)
@@ -164,4 +163,26 @@ pub fn generate_threadsafe_random_string() -> String {
             .collect()
     };
     chars
+}
+
+pub async fn update_hearthbeat_in_db(
+    db: Surreal<Client>,
+    device_id: String,
+    timestamp: i64,
+) -> Result<Option<DeviceTwin>, TwinServiceError> {
+    info!("Updating hearthbeat for device: {}", device_id);
+    let updated: Option<DeviceTwin> = db
+        .update(("device_twin", device_id))
+        .patch(PatchOp::replace(
+            "/meta_properties/last_activity_time",
+            timestamp,
+        ))
+        .patch(PatchOp::replace(
+            "/meta_properties/connection_state",
+            ConnectionState::Connected,
+        ))
+        .await?;
+
+    dbg!(&updated);
+    Ok(updated)
 }

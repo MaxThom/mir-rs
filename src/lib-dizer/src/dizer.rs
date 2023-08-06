@@ -15,7 +15,7 @@ const RMQ_TWIN_HEARTHBEAT_ROUTING_KEY: &str = "dizer.hearthbeat.v1";
 //const RMQ_TWIN_DESIRED_QUEUE_NAME: &str = "iot-q-twin-desired";
 //const RMQ_TWIN_REPORTED_QUEUE_NAME: &str = "iot-q-twin-reported";
 
-const HEARTHBEAT_INTERVAL: Duration = Duration::from_secs(60);
+const HEARTHBEAT_INTERVAL: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Clone)]
 pub struct Dizer {

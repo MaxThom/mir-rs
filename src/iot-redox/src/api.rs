@@ -19,7 +19,6 @@ pub struct ApiState {
 }
 
 const DEVICE_ID_KEY: &str = "device_id";
-const ETAG_KEY: &str = "etag";
 
 pub async fn get_records(
     State(state): State<Arc<ApiState>>,
@@ -115,22 +114,21 @@ pub async fn update_device_twins_properties(
     if params.contains_key(DEVICE_ID_KEY) {
         device_id = params[DEVICE_ID_KEY].clone();
     }
-    let mut etag = "".to_string();
-    if params.contains_key(ETAG_KEY) {
-        etag = params[ETAG_KEY].clone();
-    }
     dbg!(&device_id);
     dbg!(&payload);
 
-    // TODO: Find etag from device_id
     // Update db
-    let twins =
-        &update_device_twins_properties_in_db(state.db.clone(), etag.as_str(), &target, &payload)
-            .await
-            .map_err(|error| {
-                error!("Error: {}", error);
-                StatusCode::INTERNAL_SERVER_ERROR
-            })?;
+    let twins = &update_device_twins_properties_in_db(
+        state.db.clone(),
+        device_id.as_str(),
+        &target,
+        &payload,
+    )
+    .await
+    .map_err(|error| {
+        error!("Error: {}", error);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
     // Send msg to device with update properties if its desired
     // Create reusable channel
@@ -141,7 +139,7 @@ pub async fn update_device_twins_properties(
             .send_message(
                 &str_payload,
                 RMQ_TWIN_EXCHANGE_NAME,
-                &format!("{}.desired.v1", etag.as_str()),
+                &format!("{}.desired.v1", device_id.as_str()),
             )
             .await
         {
@@ -160,8 +158,6 @@ pub async fn create_device_twins(
 ) -> Result<Json<Value>, StatusCode> {
     debug!("create_device_twin");
     dbg!(&payload);
-
-    // TODO: Find etag from device_id
 
     let created = create_device_twins_in_db(state.db.clone(), payload)
         .await
@@ -187,15 +183,9 @@ pub async fn delete_device_twins(
     if params.contains_key(DEVICE_ID_KEY) {
         device_id = params[DEVICE_ID_KEY].clone();
     }
-    let mut etag = "".to_string();
-    if params.contains_key(ETAG_KEY) {
-        etag = params[ETAG_KEY].clone();
-    }
-    dbg!(&device_id, &etag);
+    dbg!(&device_id);
 
-    // TODO: Find etag from device_id
-
-    let twins = &delete_device_twins_in_db(state.db.clone(), etag.as_str())
+    let twins = &delete_device_twins_in_db(state.db.clone(), device_id.as_str())
         .await
         .map_err(|error| {
             error!("Error: {}", error);

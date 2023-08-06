@@ -1,9 +1,10 @@
+use std::f32::consts::E;
 use std::sync::Arc;
 
 use axum::{routing::get, Router};
 use lapin::ExchangeKind;
 use serde::Deserialize;
-use surrealdb::engine::remote::ws::Ws;
+use surrealdb::engine::remote::ws::{Client, Ws};
 use surrealdb::opt::auth::Root;
 use surrealdb::Surreal;
 pub mod api;
@@ -65,6 +66,8 @@ const RMQ_PREFETCH_COUNT: u16 = 10;
 
 use std::path::PathBuf;
 
+use crate::twin_service::*;
+
 // https://www.cloudamqp.com/blog/part1-rabbitmq-best-practice.html
 // docker run --rm --pull always -p 80:8000 -v ./surrealdb:/opt/surrealdb/ surrealdb/surrealdb:latest start --log trace --user root --pass root file:/opt/surrealdb/iot.db
 // curl -X POST -u "root:root" -H "NS: iot" -H "DB: iot" -H "Accept: application/json" -d "SELECT * FROM device_twin" localhost:80/sql
@@ -112,13 +115,14 @@ async fn main() -> Result<(), Error> {
     for i in 0..settings.thread_count.meta_queue {
         let cloned_token = token.clone();
         let cloned_amqp = amqp.clone();
+        let cloned_db = db.clone();
         //let mut sender = SenderBuilder::new(host_port.0.clone(), host_port.1.clone()).connect().unwrap();
         tokio::spawn(async move {
             tokio::select! {
                 _ = cloned_token.cancelled() => {
                     debug!("The token was shutdown")
                 }
-                _ = start_consuming_topic_queue_meta(i, cloned_amqp) => {
+                _ = start_consuming_topic_queue_meta(i, cloned_amqp, cloned_db) => {
                     debug!("device shuting down...");
                 }
             }
@@ -203,7 +207,7 @@ async fn ready() -> String {
     format!("{}", true)
 }
 
-async fn start_consuming_topic_queue_meta(index: usize, amqp: Amqp) {
+async fn start_consuming_topic_queue_meta(index: usize, amqp: Amqp, db: Surreal<Client>) {
     let settings = AmqpSettings {
         channel: ChannelSettings {
             prefetch_count: RMQ_PREFETCH_COUNT,
@@ -233,7 +237,7 @@ async fn start_consuming_topic_queue_meta(index: usize, amqp: Amqp) {
     };
     debug!("{}: Starting...", index);
     amqp.consume_topic_queue(index, settings, SerializationKind::Json, move |payload| {
-        receive_hearthbeat("sender", payload)
+        receive_hearthbeat(db.clone(), payload)
     })
     .await;
     debug!("{}: Shutting down...", index);
@@ -275,8 +279,23 @@ async fn start_consuming_topic_queue_reported(index: usize, amqp: Amqp) {
     debug!("{}: Shutting down...", index);
 }
 
-fn receive_hearthbeat(sender: &str, payload: DeviceHeartbeat) -> Result<(), Error> {
-    debug!("{}: {:?}", sender, payload);
+fn receive_hearthbeat(db: Surreal<Client>, payload: DeviceHeartbeat) -> Result<(), Error> {
+    let device_id = payload.device_id.clone();
+    let ts = payload.timestamp.clone();
+    tokio::spawn(async move {
+        let resp = update_hearthbeat_in_db(db, device_id, ts).await;
+        //match resp {
+        //    Ok(x) => debug!(
+        //        "Updated hearthbeat for device '{}': {:?}",
+        //        payload.device_id, x
+        //    ),
+        //    Err(e) => error!(
+        //        "Error updating hearthbeat for device '{}': {}",
+        //        payload.device_id, e
+        //    ),
+        //}
+    });
+
     Ok(())
 }
 
