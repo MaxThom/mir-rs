@@ -1,5 +1,7 @@
 use std::{error, fmt};
 
+use y::clients::amqp::{Amqp, AmqpError};
+
 #[derive(Debug)]
 pub enum DizerBuilderError {
     NoMirServer,
@@ -35,11 +37,12 @@ pub enum DizerError {
     TelemetrySent,
     HeathbeatSent,
     Unknown,
+    CantRequestDesiredProperties(AmqpError),
 }
 
 impl fmt::Display for DizerError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
+        match self {
             DizerError::CantConnectToMir => {
                 write!(f, "cant connect to mir server")
             }
@@ -52,17 +55,21 @@ impl fmt::Display for DizerError {
             DizerError::HeathbeatSent => {
                 write!(f, "error sending heartbeat")
             }
+            DizerError::CantRequestDesiredProperties(x) => {
+                write!(f, "error sending request for desired properties: {x}")
+            }
         }
     }
 }
 
 impl error::Error for DizerError {
     fn source(&self) -> Option<&(dyn error::Error + 'static)> {
-        match *self {
+        match self {
             DizerError::CantConnectToMir => None,
             DizerError::Unknown => None,
             DizerError::TelemetrySent => None,
             DizerError::HeathbeatSent => None,
+            DizerError::CantRequestDesiredProperties(_) => None,
         }
     }
 }

@@ -21,14 +21,25 @@ graph LR;
     G-->|#.reported.v1|H{CustomBackend}
 ```
 
+### Twin Desired on Request
+```mermaid
+graph LR;
+    A{Device}-->B(dizer.desired.v1)
+    B-->C{iot-twin}
+    C-->D(iot-q-desired)
+    D-->|'#.desired.v1'|E{Redox}
+    E-->F('iot-q-id')
+    F-->|'id'|A
+```
+
 ### Twin Desired
 ```mermaid
 graph LR;
     A{Redox}-->F{Surrealdb}
     A{Redox}-->B('id'.desired.v1)
     B-->C{iot-twin}
-    C-->D(iot-q-reported-'id')
-    D-->|'id'.desired.v1|E{Device 'id'}
+    C-->D(iot-q-'id')
+    D-->|'id'|E{Device 'id'}
 ```
 
 

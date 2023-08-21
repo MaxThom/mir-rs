@@ -94,6 +94,7 @@ impl DizerShipyard {
         let mut dizer = Dizer {
             amqp: Amqp::new("".to_string(), 1), // TODO: Use trait object that abstract Amqp
             config: Config::default(),
+            desired_prop_queue: None,
         };
 
         // Default < Builder < Configfile < Cli

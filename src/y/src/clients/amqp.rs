@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     error::Error,
     io::{Read, Write},
     string::FromUtf8Error,
@@ -18,6 +19,7 @@ use lapin::{
 };
 use log::{debug, error, info, trace};
 use serde::Deserialize;
+use surrealdb::sql::Uuid;
 use thiserror::Error as ThisError;
 use tokio_amqp::*;
 
@@ -43,6 +45,13 @@ pub struct Amqp {
 }
 
 #[derive(Debug, Clone)]
+pub struct AmqpRpcClient {
+    pub channel: Channel,
+    pub callback_queue: Queue,
+    pub consumer: Consumer,
+}
+
+#[derive(Debug, Clone)]
 pub struct AmqpSettings<'a> {
     pub channel: ChannelSettings,
     pub exchange: ExchangeSettings<'a>,
@@ -51,7 +60,7 @@ pub struct AmqpSettings<'a> {
     pub consumer: ConsumerSettings<'a>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ChannelSettings {
     pub prefetch_count: ShortUInt,
     pub options: BasicQosOptions,
@@ -65,7 +74,7 @@ pub struct ExchangeSettings<'a> {
     pub arguments: FieldTable,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct QueueSettings<'a> {
     pub name: &'a str,
     pub options: QueueDeclareOptions,
@@ -79,7 +88,7 @@ pub struct QueueBindSettings<'a> {
     pub arguments: FieldTable,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ConsumerSettings<'a> {
     pub consumer_tag: &'a str,
     pub options: BasicConsumeOptions,
@@ -140,7 +149,7 @@ impl Amqp {
         Ok(x)
     }
 
-    pub fn compress_message(&self, msg: &str) -> Result<Vec<u8>, AmqpError> {
+    pub fn compress_message(msg: &str) -> Result<Vec<u8>, AmqpError> {
         let mut compressed_data = Vec::new();
         {
             let mut compressor = CompressorWriter::new(&mut compressed_data, 4096, 10, 22);
@@ -269,7 +278,7 @@ impl Amqp {
         routing_key: &str,
     ) -> Result<&str, AmqpError> {
         // Create message and compress using Brotli 10
-        let compressed_payload = self.compress_message(payload)?;
+        let compressed_payload = Amqp::compress_message(payload)?;
 
         // Get channel
         let channel = self.get_channel().await?;
@@ -300,18 +309,18 @@ impl Amqp {
         Ok("OK")
     }
 
-    pub async fn send_message_with_channel(
-        &self,
-        channel: &Channel,
-        payload: &str,
-        exchange: &str,
-        routing_key: &str,
-    ) -> Result<&str, AmqpError> {
+    pub async fn send_message_with_channel<'a>(
+        channel: &'a Channel,
+        payload: &'a str,
+        exchange: &'a str,
+        routing_key: &'a str,
+    ) -> Result<&'a str, AmqpError> {
         // Create message and compress using Brotli 10
-        let compressed_payload = self.compress_message(payload)?;
+        let compressed_payload = Amqp::compress_message(payload)?;
 
         // Set encoding type
         let headers = BasicProperties::default().with_content_encoding("br".into());
+
         match channel
             .basic_publish(
                 exchange,
@@ -334,6 +343,47 @@ impl Amqp {
             Err(error) => return Err(AmqpError::RMQError(error)),
         };
         Ok("OK")
+    }
+
+    pub async fn send_message_with_reply<'a>(
+        channel: &'a Channel,
+        payload: &'a str,
+        exchange: &'a str,
+        routing_key: &'a str,
+        reply_queue_name: &'a str,
+        reply_correlation_id: String,
+    ) -> Result<String, AmqpError> {
+        // Create message and compress using Brotli 10
+        let compressed_payload = Amqp::compress_message(payload)?;
+
+        // Set encoding type
+        let headers = BasicProperties::default()
+            .with_content_encoding("br".into())
+            .with_correlation_id(ShortString::from(reply_correlation_id))
+            .with_reply_to(reply_queue_name.into());
+
+        match channel
+            .basic_publish(
+                exchange,
+                routing_key,
+                BasicPublishOptions::default(),
+                &compressed_payload,
+                headers,
+            )
+            .await
+            .map_err(|e| {
+                eprintln!("can't publish: {}", e);
+                e
+            })?
+            .await
+            .map_err(|e| {
+                eprintln!("can't publish: {}", e);
+                e
+            }) {
+            Ok(x) => x,
+            Err(error) => return Err(AmqpError::RMQError(error)),
+        };
+        Ok(String::from("OK"))
     }
 
     pub async fn consume_topic_queue<T, E: Error>(
@@ -433,7 +483,6 @@ impl Amqp {
             .await
         {
             Ok(consumer) => {
-                info!("{}: consumer <{}> declared", index, consumer.tag());
                 info!(
                     "{}: consumer <{}> to queue <{}> binded",
                     index,
@@ -521,5 +570,88 @@ impl Amqp {
             };
         }
         debug!("{}: Shutting down...", index);
+    }
+
+    pub async fn create_rpc_client_queue(
+        &self,
+        channel: ChannelSettings,
+        cb_queue: QueueSettings<'_>,
+        consumer: ConsumerSettings<'_>,
+    ) -> AmqpRpcClient {
+        let ch = &self.get_channel().await.unwrap();
+
+        //ch.basic_qos(channel.prefetch_count, channel.options)
+        //    .await
+        //    .unwrap();
+
+        let callback_queue = match self
+            .declare_queue_with_channel(ch, cb_queue.name, cb_queue.options, cb_queue.arguments)
+            .await
+        {
+            Ok(queue) => {
+                info!("queue <{}> declared", queue.name());
+                queue
+            }
+            Err(error) => {
+                error!("can't create queue <{}> {}", cb_queue.name, error);
+                panic!("{}", error)
+            }
+        };
+
+        let consumer = match self
+            .create_consumer_with_channel(
+                ch,
+                cb_queue.name,
+                consumer.consumer_tag,
+                consumer.options,
+                consumer.arguments,
+            )
+            .await
+        {
+            Ok(consumer) => {
+                info!(
+                    "consumer <{}> to queue <{}> binded",
+                    consumer.tag(),
+                    cb_queue.name
+                );
+                consumer
+            }
+            Err(error) => {
+                error!(
+                    "can't bind consumer and queue <{}> {}",
+                    cb_queue.name, error
+                );
+                panic!("{}", error)
+            }
+        };
+
+        AmqpRpcClient {
+            channel: ch.clone(),
+            callback_queue,
+            consumer,
+        }
+    }
+}
+
+impl AmqpRpcClient {
+    pub async fn call(
+        &self,
+        payload: &str,
+        exchange: &str,
+        routing_key: &str,
+    ) -> Result<String, AmqpError> {
+        let correlation_id = Uuid::new_v4().to_string();
+        debug!("call - {correlation_id}");
+        let x = Amqp::send_message_with_reply(
+            &self.channel,
+            payload,
+            exchange,
+            routing_key,
+            self.callback_queue.name().as_str(),
+            correlation_id,
+        )
+        .await?;
+
+        Ok(x)
     }
 }

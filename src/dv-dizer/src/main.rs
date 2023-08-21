@@ -42,7 +42,7 @@ async fn main() -> Result<(), String> {
         .with_config_file("")
         .with_device_id("012xwf===")
         .with_mir_server("")
-        .with_thread_count(1)
+        .with_thread_count(3)
         .with_logger("info")
         .build();
     if let Err(x) = dizer_builder {
@@ -92,7 +92,7 @@ async fn send_random_telemetry(dizer: Dizer) {
         tlm.floats.insert(0, gen.next_datapoint());
 
         match dizer.send_telemetry(tlm).await {
-            Ok(msg) => trace!("{}", msg),
+            Ok(_) => (), //  trace!("{}", msg),
             Err(error) => error!("{}", error),
         };
 

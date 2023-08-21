@@ -1,5 +1,6 @@
 # Roadmap
 
+
 ## Redox
 
 - [x] create a device twin from api
@@ -28,6 +29,11 @@
 - [x] config, logging, cli
 - [x] send telemetry
 - [x] heartbeat + metadata
+- [ ] initial pulling of desired properties
+    - [ ] using rpc
+      - [x] client side, send message
+      - [ ] client side, set up callback and await message from queue
+      - [ ] server side
 - [ ] retrieve desired properties
   - connect to desired properties queue. [See ADR-11], --> no need for persistent queue if device disconect
   - get desired properties using rest api
