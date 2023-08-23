@@ -10,7 +10,7 @@ use std::{f32::consts::E, fmt::Error, time::Duration};
 use tokio::time;
 use x::{
     device_twin::{DeviceTwin, Properties},
-    telemetry::{DeviceHeartbeat, DeviceTelemetry, Telemetry},
+    telemetry::{DeviceDesiredRequest, DeviceHeartbeatRequest, DeviceTelemetryRequest, Telemetry},
 };
 use y::clients::amqp::{
     Amqp, AmqpError, AmqpRpcClient, ChannelSettings, ConsumerSettings, QueueSettings,
@@ -21,7 +21,7 @@ const RMQ_STREAM_ROUTING_KEY: &str = "dizer.telemetry.v1";
 
 const RMQ_TWIN_EXCHANGE_NAME: &str = "iot-twin";
 const RMQ_TWIN_HEARTHBEAT_ROUTING_KEY: &str = "dizer.hearthbeat.v1";
-const RMQ_TWIN_DESIRED_PROP_ROUTING_KEY: &str = "dizer.update.v1";
+const RMQ_TWIN_DESIRED_PROP_ROUTING_KEY: &str = "dizer.desired.v1";
 //const RMQ_TWIN_DESIRED_QUEUE_NAME: &str = "iot-q-twin-desired";
 //const RMQ_TWIN_REPORTED_QUEUE_NAME: &str = "iot-q-twin-reported";
 
@@ -66,7 +66,7 @@ impl Dizer {
             rpc_client: create_rpc_client(self.clone()).await,
         });
 
-        if let Err(x) = self.request_desired_properties().await {
+        if let Err(x) = self.send_desired_request().await {
             error!("error requesting desired properties: {}", x)
         }
 
@@ -89,7 +89,7 @@ impl Dizer {
 
     pub async fn send_telemetry(&self, telemetry: Telemetry) -> Result<&str, DizerError> {
         // Wrap
-        let payload = DeviceTelemetry {
+        let payload = DeviceTelemetryRequest {
             device_id: self.config.device_id.clone(),
             timestamp: Utc::now().timestamp_nanos(),
             telemetry,
@@ -112,27 +112,40 @@ impl Dizer {
         }
     }
 
-    pub async fn request_desired_properties(&self) -> Result<(), AmqpError> {
+    pub async fn send_desired_request(&self) -> Result<(), AmqpError> {
         //TODO: .is_initialized
+
+        let payload = DeviceDesiredRequest {
+            device_id: self.config.device_id.clone(),
+            timestamp: Utc::now().timestamp_nanos(),
+        };
+        let str_payload = serde_json::to_string(&payload).unwrap();
         match self
             .desired_prop_queue
             .as_ref()
             .unwrap()
             .rpc_client
             .call(
-                "requesting desired properties",
+                &str_payload,
                 RMQ_TWIN_EXCHANGE_NAME,
-                RMQ_TWIN_HEARTHBEAT_ROUTING_KEY,
+                RMQ_TWIN_DESIRED_PROP_ROUTING_KEY,
             ) // TODO: Proper message
             .await
         {
             Ok(_) => Ok(()),
             Err(x) => Err(x),
         }
+
+        let routing_key = delivery
+            .properties
+            .reply_to()
+            .as_ref()
+            .ok_or(Error::MissingReplyTo)?
+            .as_str();
     }
 
-    async fn send_hearthbeat(&self) -> Result<&str, DizerError> {
-        let payload = DeviceHeartbeat {
+    async fn send_hearthbeat_request(&self) -> Result<&str, DizerError> {
+        let payload = DeviceHeartbeatRequest {
             device_id: self.config.device_id.clone(),
             timestamp: Utc::now().timestamp_nanos(),
         };
@@ -162,7 +175,7 @@ fn setup_heartbeat_task(dizer: Dizer) {
         loop {
             interval.tick().await;
             debug!("HEARTHBEAT");
-            if let Err(x) = dizer.send_hearthbeat().await {
+            if let Err(x) = dizer.send_hearthbeat_request().await {
                 error!("error sending heartbeat: {}", x);
             }
         }

@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 // TODO: Payload is a Generic so user can send whatever
 //       And they should not care about metadata of the payload
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
-pub struct DeviceTelemetry {
+pub struct DeviceTelemetryRequest {
     pub device_id: String,
     pub timestamp: i64,
     pub telemetry: Telemetry,
@@ -20,7 +20,13 @@ pub struct Telemetry {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
-pub struct DeviceHeartbeat {
+pub struct DeviceHeartbeatRequest {
+    pub device_id: String,
+    pub timestamp: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct DeviceDesiredRequest {
     pub device_id: String,
     pub timestamp: i64,
 }

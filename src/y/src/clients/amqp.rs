@@ -351,7 +351,7 @@ impl Amqp {
         exchange: &'a str,
         routing_key: &'a str,
         reply_queue_name: &'a str,
-        reply_correlation_id: String,
+        _reply_correlation_id: String,
     ) -> Result<String, AmqpError> {
         // Create message and compress using Brotli 10
         let compressed_payload = Amqp::compress_message(payload)?;
@@ -359,7 +359,7 @@ impl Amqp {
         // Set encoding type
         let headers = BasicProperties::default()
             .with_content_encoding("br".into())
-            .with_correlation_id(ShortString::from(reply_correlation_id))
+            //.with_correlation_id(ShortString::from(reply_correlation_id))
             .with_reply_to(reply_queue_name.into());
 
         match channel
@@ -391,7 +391,7 @@ impl Amqp {
         index: usize,
         settings: AmqpSettings<'_>,
         serialization: SerializationKind,
-        mut on_msg_callback: impl FnMut(T) -> Result<(), E>,
+        mut on_msg_callback: impl FnMut(T, Option<ShortString>) -> Result<(), E>,
     ) where
         T: for<'a> Deserialize<'a> + std::fmt::Debug,
     {
@@ -506,6 +506,8 @@ impl Amqp {
         info!("{}: consumer <{}> is liscening", index, consumer.tag());
         while let Some(delivery) = consumer.next().await {
             if let Ok(delivery) = delivery {
+                let reply_to = delivery.properties.reply_to().as_ref().unwrap().to_owned();
+
                 let payload: Vec<u8> = delivery.data.clone();
                 let uncompressed_message = match delivery
                     .properties
@@ -523,7 +525,7 @@ impl Amqp {
                     serialization.from_vec(&uncompressed_message).unwrap();
                 debug!("{}: {:?}", index, deserialized_payload);
 
-                match on_msg_callback(deserialized_payload) {
+                match on_msg_callback(deserialized_payload, Some(reply_to)) {
                     Ok(()) => {
                         match channel
                             .basic_ack(delivery.delivery_tag, BasicAckOptions::default())

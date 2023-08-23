@@ -8,4 +8,5 @@ surrealdb:
 thread_count:
   meta_queue: "1"
   reported_queue: "1"
+  desired_queue: "1"
   web_srv_queues: "1"

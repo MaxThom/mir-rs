@@ -10,7 +10,7 @@ use thiserror::Error as ThisError;
 use tokio_util::sync::CancellationToken;
 use y::utils::setup_cli;
 
-use x::telemetry::DeviceTelemetry;
+use x::telemetry::DeviceTelemetryRequest;
 use y::clients::amqp::Amqp;
 use y::utils::config::{setup_config, FileFormat};
 use y::utils::logger::setup_logger;
@@ -90,7 +90,7 @@ async fn main() {
 async fn start_consuming_topic_queue(
     index: usize,
     amqp: Amqp,
-    mut callback: impl FnMut(DeviceTelemetry) -> Result<(), Error>,
+    mut callback: impl FnMut(DeviceTelemetryRequest) -> Result<(), Error>,
 ) {
     // TODO: Could implement better TCP Connection and Ch
     // Get channel and declare topic, queue, binding and consumer
@@ -211,7 +211,7 @@ async fn start_consuming_topic_queue(
             }
             .unwrap();
 
-            let device_payload: DeviceTelemetry =
+            let device_payload: DeviceTelemetryRequest =
                 serde_json::from_str(&uncompressed_message).unwrap();
             debug!("{}: {:?}", index, device_payload);
             callback(device_payload).unwrap();
@@ -234,7 +234,7 @@ async fn start_consuming_topic_queue(
     debug!("{}: Shutting down...", index);
 }
 
-fn push_to_puthost(sender: &mut Sender, payload: DeviceTelemetry) -> Result<(), Error> {
+fn push_to_puthost(sender: &mut Sender, payload: DeviceTelemetryRequest) -> Result<(), Error> {
     let mut buffer = Buffer::new();
     let timestamp = payload.timestamp;
     let device_id = payload.device_id;

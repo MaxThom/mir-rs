@@ -2,6 +2,7 @@ use std::f32::consts::E;
 use std::sync::Arc;
 
 use axum::{routing::get, Router};
+use lapin::types::ShortString;
 use lapin::ExchangeKind;
 use serde::Deserialize;
 use surrealdb::engine::remote::ws::{Client, Ws};
@@ -15,7 +16,7 @@ use log::{debug, error, info, trace};
 use thiserror::Error as ThisError;
 use tokio_util::sync::CancellationToken;
 
-use x::telemetry::{DeviceHeartbeat, DeviceTelemetry};
+use x::telemetry::{DeviceDesiredRequest, DeviceHeartbeatRequest, DeviceTelemetryRequest};
 use y::clients::amqp::{
     Amqp, AmqpSettings, ChannelSettings, ConsumerSettings, ExchangeSettings, QueueBindSettings,
     QueueSettings,
@@ -35,6 +36,7 @@ enum Error {
 pub struct ThreadCound {
     pub meta_queue: usize,
     pub reported_queue: usize,
+    pub desired_queue: usize,
     pub web_srv_queues: usize,
 }
 
@@ -61,6 +63,8 @@ const RMQ_TWIN_HEARTHBEAT_QUEUE_NAME: &str = "iot-q-hearthbeat";
 const RMQ_TWIN_HEATHBEAT_ROUTING_KEY: &str = "#.hearthbeat.v1";
 const RMQ_TWIN_REPORTED_QUEUE_NAME: &str = "iot-q-reported";
 const RMQ_TWIN_REPORTED_ROUTING_KEY: &str = "#.reported.v1";
+const RMQ_TWIN_DESIRED_QUEUE_NAME: &str = "iot-q-desired";
+const RMQ_TWIN_DESIRED_ROUTING_KEY: &str = "#.desired.v1";
 
 const RMQ_PREFETCH_COUNT: u16 = 10;
 
@@ -133,13 +137,32 @@ async fn main() -> Result<(), Error> {
     for i in 0..settings.thread_count.reported_queue {
         let cloned_token = token.clone();
         let cloned_amqp = amqp.clone();
+        let cloned_db = db.clone();
         //let mut sender = SenderBuilder::new(host_port.0.clone(), host_port.1.clone()).connect().unwrap();
         tokio::spawn(async move {
             tokio::select! {
                 _ = cloned_token.cancelled() => {
                     debug!("The token was shutdown")
                 }
-                _ = start_consuming_topic_queue_reported(i, cloned_amqp) => {
+                _ = start_consuming_topic_queue_reported(i, cloned_amqp, cloned_db) => {
+                    debug!("device shuting down...");
+                }
+            }
+        });
+    }
+
+    // Task for Desired queue
+    for i in 0..settings.thread_count.desired_queue {
+        let cloned_token = token.clone();
+        let cloned_amqp = amqp.clone();
+        let cloned_db = db.clone();
+        //let mut sender = SenderBuilder::new(host_port.0.clone(), host_port.1.clone()).connect().unwrap();
+        tokio::spawn(async move {
+            tokio::select! {
+                _ = cloned_token.cancelled() => {
+                    debug!("The token was shutdown")
+                }
+                _ = start_consuming_topic_queue_desired(i, cloned_amqp, cloned_db) => {
                     debug!("device shuting down...");
                 }
             }
@@ -236,14 +259,17 @@ async fn start_consuming_topic_queue_meta(index: usize, amqp: Amqp, db: Surreal<
         },
     };
     debug!("{}: Starting...", index);
-    amqp.consume_topic_queue(index, settings, SerializationKind::Json, move |payload| {
-        receive_hearthbeat(db.clone(), payload)
-    })
+    amqp.consume_topic_queue(
+        index,
+        settings,
+        SerializationKind::Json,
+        move |payload, _| receive_hearthbeat_request(db.clone(), payload),
+    )
     .await;
     debug!("{}: Shutting down...", index);
 }
 
-async fn start_consuming_topic_queue_reported(index: usize, amqp: Amqp) {
+async fn start_consuming_topic_queue_reported(index: usize, amqp: Amqp, db: Surreal<Client>) {
     let settings = AmqpSettings {
         channel: ChannelSettings {
             prefetch_count: RMQ_PREFETCH_COUNT,
@@ -261,7 +287,7 @@ async fn start_consuming_topic_queue_reported(index: usize, amqp: Amqp) {
             arguments: FieldTable::default(),
         },
         queue_bind: QueueBindSettings {
-            routing_key: "#.twin_reported.v1",
+            routing_key: RMQ_TWIN_REPORTED_ROUTING_KEY,
             options: QueueBindOptions::default(),
             arguments: FieldTable::default(),
         },
@@ -272,17 +298,66 @@ async fn start_consuming_topic_queue_reported(index: usize, amqp: Amqp) {
         },
     };
 
-    amqp.consume_topic_queue(index, settings, SerializationKind::Json, move |payload| {
-        push_to_puthost("sender", payload)
-    })
+    amqp.consume_topic_queue(
+        index,
+        settings,
+        SerializationKind::Json,
+        move |payload, reply_to| {
+            // TODO
+            receive_desired_request(db.clone(), amqp, payload, reply_to)
+        },
+    )
     .await;
     debug!("{}: Shutting down...", index);
 }
 
-fn receive_hearthbeat(db: Surreal<Client>, payload: DeviceHeartbeat) -> Result<(), Error> {
+async fn start_consuming_topic_queue_desired(index: usize, amqp: Amqp, db: Surreal<Client>) {
+    let settings = AmqpSettings {
+        channel: ChannelSettings {
+            prefetch_count: RMQ_PREFETCH_COUNT,
+            options: BasicQosOptions::default(),
+        },
+        exchange: ExchangeSettings {
+            name: RMQ_TWIN_EXCHANGE_NAME,
+            kind: ExchangeKind::Topic,
+            options: ExchangeDeclareOptions::default(),
+            arguments: FieldTable::default(),
+        },
+        queue: QueueSettings {
+            name: RMQ_TWIN_DESIRED_QUEUE_NAME,
+            options: QueueDeclareOptions::default(),
+            arguments: FieldTable::default(),
+        },
+        queue_bind: QueueBindSettings {
+            routing_key: RMQ_TWIN_DESIRED_ROUTING_KEY,
+            options: QueueBindOptions::default(),
+            arguments: FieldTable::default(),
+        },
+        consumer: ConsumerSettings {
+            consumer_tag: "",
+            options: BasicConsumeOptions::default(),
+            arguments: FieldTable::default(),
+        },
+    };
+
+    amqp.consume_topic_queue(
+        index,
+        settings,
+        SerializationKind::Json,
+        move |payload, reply_to| receive_desired_request(db.clone(), amqp, payload, reply_to),
+    )
+    .await;
+    debug!("{}: Shutting down...", index);
+}
+
+fn receive_hearthbeat_request(
+    db: Surreal<Client>,
+    payload: DeviceHeartbeatRequest,
+) -> Result<(), Error> {
     let device_id = payload.device_id.clone();
     let ts = payload.timestamp.clone();
     tokio::spawn(async move {
+        // TODO: retry logic
         let resp = update_hearthbeat_in_db(db, device_id, ts).await;
         //match resp {
         //    Ok(x) => debug!(
@@ -299,7 +374,68 @@ fn receive_hearthbeat(db: Surreal<Client>, payload: DeviceHeartbeat) -> Result<(
     Ok(())
 }
 
-fn push_to_puthost(sender: &str, payload: DeviceTelemetry) -> Result<(), Error> {
+// TODO: Maybe async?
+// what to send back?
+// - error? and the device receives it and retry?
+// - auto retry? here, both solution?
+fn receive_desired_request(
+    db: Surreal<Client>,
+    amqp: Amqp,
+    payload: DeviceDesiredRequest,
+    reply_to: Option<ShortString>,
+) -> Result<(), Error> {
+    let device_id = payload.device_id.clone();
+    let ts = payload.timestamp.clone();
+    tokio::spawn(async move {
+        // TODO: retry logic
+        // TODO: should you panic in async? or print out the error?
+        let resp = get_device_twins_with_id_from_db(&db, device_id.as_str()).await;
+
+        let opt_twin = if let Ok(resp) = resp {
+            resp
+        } else {
+            error!("Error getting device twin from db: {}", resp.unwrap_err());
+            return;
+        };
+
+        let twin = if let Some(opt_twin) = opt_twin {
+            opt_twin
+        } else {
+            error!("Device '{device_id}' not found");
+            return;
+        };
+
+        dbg!(twin.desired_properties);
+
+        let reply_queue = if let Some(reply_to) = reply_to {
+            reply_to
+        } else {
+            error!("No reply_to specified");
+            return;
+        };
+
+        // Serialize & Send
+        let str_twin = serde_json::to_string(&twin).unwrap();
+        debug!("{:?}", str_twin);
+        match amqp
+            .send_message(
+                &str_twin,
+                RMQ_TWIN_EXCHANGE_NAME,
+                ShortString::to_string(reply_queue).as_str(),
+            )
+            .await
+        {
+            Ok(x) => {}
+            Err(e) => {
+                error!("{:?}", e);
+            } // TODO: Add error type to telemetry sent
+        };
+    });
+
+    Ok(())
+}
+
+fn push_to_puthost(sender: &str, payload: DeviceTelemetryRequest) -> Result<(), Error> {
     debug!("{}: {:?}", sender, payload);
     Ok(())
 }
