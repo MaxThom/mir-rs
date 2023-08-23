@@ -6,7 +6,7 @@ use lapin::{
 };
 use log::{debug, error, info};
 use serde::Deserialize;
-use std::{f32::consts::E, fmt::Error, time::Duration};
+use std::{fmt::Error, time::Duration};
 use tokio::time;
 use x::{
     device_twin::{DeviceTwin, Properties},
@@ -135,13 +135,6 @@ impl Dizer {
             Ok(_) => Ok(()),
             Err(x) => Err(x),
         }
-
-        let routing_key = delivery
-            .properties
-            .reply_to()
-            .as_ref()
-            .ok_or(Error::MissingReplyTo)?
-            .as_str();
     }
 
     async fn send_hearthbeat_request(&self) -> Result<&str, DizerError> {

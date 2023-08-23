@@ -95,13 +95,13 @@ async fn main() -> Result<(), Error> {
     info!("{:?}", settings);
 
     // Create amqp connection pool
-    let amqp: Amqp = Amqp::new(
+    let amqp = Arc::new(Amqp::new(
         settings.amqp_addr.clone(),
         settings.thread_count.meta_queue
             + settings.thread_count.reported_queue
             + settings.thread_count.web_srv_queues
             + 1,
-    );
+    ));
 
     // Create surrealdb connection. Surreal create handles multiple connections using channel. See .with_capacity(0)
     let db = Surreal::new::<Ws>(settings.surrealdb.addr)
@@ -230,7 +230,7 @@ async fn ready() -> String {
     format!("{}", true)
 }
 
-async fn start_consuming_topic_queue_meta(index: usize, amqp: Amqp, db: Surreal<Client>) {
+async fn start_consuming_topic_queue_meta(index: usize, amqp: Arc<Amqp>, db: Surreal<Client>) {
     let settings = AmqpSettings {
         channel: ChannelSettings {
             prefetch_count: RMQ_PREFETCH_COUNT,
@@ -269,7 +269,7 @@ async fn start_consuming_topic_queue_meta(index: usize, amqp: Amqp, db: Surreal<
     debug!("{}: Shutting down...", index);
 }
 
-async fn start_consuming_topic_queue_reported(index: usize, amqp: Amqp, db: Surreal<Client>) {
+async fn start_consuming_topic_queue_reported(index: usize, amqp: Arc<Amqp>, db: Surreal<Client>) {
     let settings = AmqpSettings {
         channel: ChannelSettings {
             prefetch_count: RMQ_PREFETCH_COUNT,
@@ -298,20 +298,21 @@ async fn start_consuming_topic_queue_reported(index: usize, amqp: Amqp, db: Surr
         },
     };
 
-    amqp.consume_topic_queue(
-        index,
-        settings,
-        SerializationKind::Json,
-        move |payload, reply_to| {
-            // TODO
-            receive_desired_request(db.clone(), amqp, payload, reply_to)
-        },
-    )
-    .await;
+    amqp.clone()
+        .consume_topic_queue(
+            index,
+            settings,
+            SerializationKind::Json,
+            move |payload, reply_to| {
+                // TODO
+                receive_desired_request(db.clone(), amqp.clone(), payload, reply_to)
+            },
+        )
+        .await;
     debug!("{}: Shutting down...", index);
 }
 
-async fn start_consuming_topic_queue_desired(index: usize, amqp: Amqp, db: Surreal<Client>) {
+async fn start_consuming_topic_queue_desired(index: usize, amqp: Arc<Amqp>, db: Surreal<Client>) {
     let settings = AmqpSettings {
         channel: ChannelSettings {
             prefetch_count: RMQ_PREFETCH_COUNT,
@@ -340,13 +341,16 @@ async fn start_consuming_topic_queue_desired(index: usize, amqp: Amqp, db: Surre
         },
     };
 
-    amqp.consume_topic_queue(
-        index,
-        settings,
-        SerializationKind::Json,
-        move |payload, reply_to| receive_desired_request(db.clone(), amqp, payload, reply_to),
-    )
-    .await;
+    amqp.clone()
+        .consume_topic_queue(
+            index,
+            settings,
+            SerializationKind::Json,
+            move |payload, reply_to| {
+                receive_desired_request(db.clone(), amqp.clone(), payload, reply_to)
+            },
+        )
+        .await;
     debug!("{}: Shutting down...", index);
 }
 
@@ -380,7 +384,7 @@ fn receive_hearthbeat_request(
 // - auto retry? here, both solution?
 fn receive_desired_request(
     db: Surreal<Client>,
-    amqp: Amqp,
+    amqp: Arc<Amqp>,
     payload: DeviceDesiredRequest,
     reply_to: Option<ShortString>,
 ) -> Result<(), Error> {
@@ -405,9 +409,10 @@ fn receive_desired_request(
             return;
         };
 
-        dbg!(twin.desired_properties);
+        dbg!(&twin.desired_properties);
 
         let reply_queue = if let Some(reply_to) = reply_to {
+            dbg!(&reply_to);
             reply_to
         } else {
             error!("No reply_to specified");
@@ -416,16 +421,17 @@ fn receive_desired_request(
 
         // Serialize & Send
         let str_twin = serde_json::to_string(&twin).unwrap();
-        debug!("{:?}", str_twin);
         match amqp
             .send_message(
                 &str_twin,
                 RMQ_TWIN_EXCHANGE_NAME,
-                ShortString::to_string(reply_queue).as_str(),
+                ShortString::to_string(&reply_queue).as_str(),
             )
             .await
         {
-            Ok(x) => {}
+            Ok(x) => {
+                info!("{x}")
+            }
             Err(e) => {
                 error!("{:?}", e);
             } // TODO: Add error type to telemetry sent
