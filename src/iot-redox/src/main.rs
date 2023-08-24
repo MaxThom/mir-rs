@@ -95,13 +95,13 @@ async fn main() -> Result<(), Error> {
     info!("{:?}", settings);
 
     // Create amqp connection pool
-    let amqp = Arc::new(Amqp::new(
+    let amqp = Amqp::new(
         settings.amqp_addr.clone(),
         settings.thread_count.meta_queue
             + settings.thread_count.reported_queue
             + settings.thread_count.web_srv_queues
             + 1,
-    ));
+    );
 
     // Create surrealdb connection. Surreal create handles multiple connections using channel. See .with_capacity(0)
     let db = Surreal::new::<Ws>(settings.surrealdb.addr)
@@ -230,7 +230,7 @@ async fn ready() -> String {
     format!("{}", true)
 }
 
-async fn start_consuming_topic_queue_meta(index: usize, amqp: Arc<Amqp>, db: Surreal<Client>) {
+async fn start_consuming_topic_queue_meta(index: usize, amqp: Amqp, db: Surreal<Client>) {
     let settings = AmqpSettings {
         channel: ChannelSettings {
             prefetch_count: RMQ_PREFETCH_COUNT,
@@ -269,7 +269,7 @@ async fn start_consuming_topic_queue_meta(index: usize, amqp: Arc<Amqp>, db: Sur
     debug!("{}: Shutting down...", index);
 }
 
-async fn start_consuming_topic_queue_reported(index: usize, amqp: Arc<Amqp>, db: Surreal<Client>) {
+async fn start_consuming_topic_queue_reported(index: usize, amqp: Amqp, db: Surreal<Client>) {
     let settings = AmqpSettings {
         channel: ChannelSettings {
             prefetch_count: RMQ_PREFETCH_COUNT,
@@ -312,7 +312,7 @@ async fn start_consuming_topic_queue_reported(index: usize, amqp: Arc<Amqp>, db:
     debug!("{}: Shutting down...", index);
 }
 
-async fn start_consuming_topic_queue_desired(index: usize, amqp: Arc<Amqp>, db: Surreal<Client>) {
+async fn start_consuming_topic_queue_desired(index: usize, amqp: Amqp, db: Surreal<Client>) {
     let settings = AmqpSettings {
         channel: ChannelSettings {
             prefetch_count: RMQ_PREFETCH_COUNT,
@@ -384,7 +384,7 @@ fn receive_hearthbeat_request(
 // - auto retry? here, both solution?
 fn receive_desired_request(
     db: Surreal<Client>,
-    amqp: Arc<Amqp>,
+    amqp: Amqp,
     payload: DeviceDesiredRequest,
     reply_to: Option<ShortString>,
 ) -> Result<(), Error> {
@@ -438,10 +438,5 @@ fn receive_desired_request(
         };
     });
 
-    Ok(())
-}
-
-fn push_to_puthost(sender: &str, payload: DeviceTelemetryRequest) -> Result<(), Error> {
-    debug!("{}: {:?}", sender, payload);
     Ok(())
 }

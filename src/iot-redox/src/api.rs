@@ -14,7 +14,7 @@ use y::clients::amqp::Amqp;
 use crate::{twin_service::*, RMQ_TWIN_EXCHANGE_NAME};
 
 pub struct ApiState {
-    pub amqp: Arc<Amqp>,
+    pub amqp: Amqp,
     pub db: Surreal<Client>,
 }
 
