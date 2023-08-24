@@ -1,7 +1,8 @@
-use std::{path::PathBuf, str::FromStr};
+use std::{fmt, path::PathBuf, str::FromStr};
 
 use clap::ArgMatches;
 use log::info;
+use x::device_twin::Properties;
 use y::{
     clients::amqp::Amqp,
     utils::{config::FileFormat, setup_cli, setup_config, setup_logger},
@@ -12,19 +13,40 @@ use crate::{
     error::DizerBuilderError,
 };
 
-#[derive(Default, Debug)]
-pub struct DizerShipyard {
+#[derive(Default)]
+pub struct MirShipyard {
     config_file_path: Option<PathBuf>,
     device_id: Option<String>,
     mir_addr: Option<String>,
     thread_count: Option<usize>,
     log_level: Option<String>,
     cli: Option<ArgMatches>,
+    desired_callback: Option<Box<dyn FnMut(Option<Properties>)>>,
+}
+
+impl fmt::Debug for MirShipyard {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let desired_cb = if let Some(_) = &self.desired_callback {
+            "Some"
+        } else {
+            "None"
+        };
+
+        f.debug_struct("MirShipyard")
+            .field("config_file_path", &self.config_file_path)
+            .field("device_id", &self.device_id)
+            .field("mir_addr", &self.mir_addr)
+            .field("thread_count", &self.thread_count)
+            .field("log_level", &self.log_level)
+            .field("cli", &self.cli)
+            .field("desired_callback", &desired_cb)
+            .finish()
+    }
 }
 
 const APP_NAME: &str = "dizer";
 
-impl DizerShipyard {
+impl MirShipyard {
     pub fn new() -> Self {
         Self {
             config_file_path: None,
@@ -33,11 +55,12 @@ impl DizerShipyard {
             thread_count: None,
             log_level: None,
             cli: None,
+            desired_callback: None,
         }
     }
 
     pub fn shipyard() -> Self {
-        DizerShipyard::new()
+        MirShipyard::new()
     }
 
     pub fn with_cli(&mut self) -> &mut Self {
@@ -86,6 +109,14 @@ impl DizerShipyard {
             return self;
         }
         self.mir_addr = Some(server_addr.to_string());
+        self
+    }
+
+    pub fn with_desired_properties_handler<T>(
+        &mut self,
+        callback: impl FnMut(Option<Properties>) + 'static,
+    ) -> &mut Self {
+        self.desired_callback = Some(Box::new(callback));
         self
     }
 

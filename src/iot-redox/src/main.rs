@@ -1,4 +1,3 @@
-use std::f32::consts::E;
 use std::sync::Arc;
 
 use axum::{routing::get, Router};
@@ -16,7 +15,7 @@ use log::{debug, error, info, trace};
 use thiserror::Error as ThisError;
 use tokio_util::sync::CancellationToken;
 
-use x::telemetry::{DeviceDesiredRequest, DeviceHeartbeatRequest, DeviceTelemetryRequest};
+use x::telemetry::{DeviceDesiredRequest, DeviceHeartbeatRequest};
 use y::clients::amqp::{
     Amqp, AmqpSettings, ChannelSettings, ConsumerSettings, ExchangeSettings, QueueBindSettings,
     QueueSettings,
@@ -420,7 +419,7 @@ fn receive_desired_request(
         };
 
         // Serialize & Send
-        let str_twin = serde_json::to_string(&twin).unwrap();
+        let str_twin = serde_json::to_string(&twin.desired_properties).unwrap();
         match amqp
             .send_message(
                 &str_twin,

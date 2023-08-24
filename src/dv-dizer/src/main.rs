@@ -1,4 +1,4 @@
-use dizer::{builder::DizerShipyard, dizer::Dizer};
+use dizer::{builder::MirShipyard, dizer::Dizer};
 use log::{debug, error, info, trace};
 use thiserror::Error as ThisError;
 use tokio::time::{sleep, Duration};
@@ -37,7 +37,7 @@ enum Error {}
 async fn main() -> Result<(), String> {
     // Init token & dizer
     let token = CancellationToken::new();
-    let dizer_builder = DizerShipyard::new()
+    let dizer_builder = MirShipyard::new()
         .with_cli()
         .with_config_file("")
         .with_device_id("012xwf===")
