@@ -1,3 +1,6 @@
+tmux:
+	./tmux.sh
+
 oxi:
 	cargo run --bin dv-oxi -- -c ./configs/local_oxi.yaml
 
@@ -14,7 +17,9 @@ swarmer:
 	cargo run --bin iot-swarmer -- -c ./configs/local_swarmer.yaml
 
 rabbit:
-	docker run -it --rm --name rabbitmq -p 5672:5672 -p 15672:15672 rabbitmq:3.12-management
+	docker stop rabbitmq || true
+	docker run --rm --name rabbitmq -p 5672:5672 -p 15672:15672 rabbitmq:3.12-management
 
 db:
-	docker run --rm --pull always -p 80:8000 -v ./surrealdb:/opt/surrealdb/ surrealdb/surrealdb:latest start --log trace --user root --pass root file:/opt/surrealdb/iot.db
+	docker stop surrealdb || true
+	docker run --rm --pull always --name surrealdb -p 80:8000 -v ./surrealdb:/opt/surrealdb/ surrealdb/surrealdb:latest start --log trace --user root --pass root file:/opt/surrealdb/iot.db
