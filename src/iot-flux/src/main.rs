@@ -206,7 +206,7 @@ async fn start_consuming_topic_queue(
                 .unwrap_or_else(|| ShortString::from(""))
                 .as_str()
             {
-                "br" => amqp.decompress_message_as_str(payload),
+                "br" => Amqp::decompress_message_as_str(payload),
                 _ => Ok(String::from_utf8(payload).unwrap()),
             }
             .unwrap();

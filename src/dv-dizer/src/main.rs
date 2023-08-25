@@ -3,7 +3,7 @@ use log::{debug, error, info, trace};
 use thiserror::Error as ThisError;
 use tokio::time::{sleep, Duration};
 use tokio_util::sync::CancellationToken;
-use x::telemetry::Telemetry;
+use x::{device_twin::Properties, telemetry::Telemetry};
 use y::utils::telemetry::{PyramidTelemetryGenerator, TelemetryGenerator};
 
 #[derive(ThisError, Debug)]
@@ -42,8 +42,11 @@ async fn main() -> Result<(), String> {
         .with_config_file("")
         .with_device_id("012xwf===")
         .with_mir_server("")
-        .with_thread_count(3)
+        .with_thread_count(5)
         .with_logger("info")
+        .with_desired_properties_handler(|x: Option<Properties>| {
+            info!("DESIRED properties handler: {:?}", x);
+        })
         .build();
     if let Err(x) = dizer_builder {
         return Err(format!("error initializing Dizer: {}", x));

@@ -23,7 +23,7 @@ use surrealdb::sql::Uuid;
 use thiserror::Error as ThisError;
 use tokio_amqp::*;
 
-use crate::utils::serialization::SerializationKind;
+use crate::utils::serialization::{self, SerializationKind};
 
 #[derive(ThisError, Debug)]
 pub enum AmqpError {
@@ -134,14 +134,14 @@ impl Amqp {
         }
     }
 
-    pub fn decompress_message(&self, msg: Vec<u8>) -> Result<Vec<u8>, AmqpError> {
+    pub fn decompress_message(msg: Vec<u8>) -> Result<Vec<u8>, AmqpError> {
         let mut uncompressed_message = Vec::new();
         let mut decompressor = Decompressor::new(&msg[..], 4096);
         decompressor.read_to_end(&mut uncompressed_message).unwrap();
         Ok(uncompressed_message)
     }
 
-    pub fn decompress_message_as_str(&self, msg: Vec<u8>) -> Result<String, AmqpError> {
+    pub fn decompress_message_as_str(msg: Vec<u8>) -> Result<String, AmqpError> {
         let mut uncompressed_message = Vec::new();
         let mut decompressor = Decompressor::new(&msg[..], 4096);
         decompressor.read_to_end(&mut uncompressed_message).unwrap();
@@ -506,7 +506,11 @@ impl Amqp {
         info!("{}: consumer <{}> is liscening", index, consumer.tag());
         while let Some(delivery) = consumer.next().await {
             if let Ok(delivery) = delivery {
-                let reply_to = delivery.properties.reply_to().as_ref().unwrap().to_owned();
+                let reply_to = if let Some(x) = delivery.properties.reply_to().as_ref() {
+                    x.to_owned()
+                } else {
+                    ShortString::from("")
+                };
 
                 let payload: Vec<u8> = delivery.data.clone();
                 let uncompressed_message = match delivery
@@ -516,7 +520,7 @@ impl Amqp {
                     .unwrap_or_else(|| ShortString::from(""))
                     .as_str()
                 {
-                    "br" => self.decompress_message(payload),
+                    "br" => Amqp::decompress_message(payload),
                     _ => Ok(payload),
                 }
                 .unwrap();
@@ -576,7 +580,6 @@ impl Amqp {
 
     pub async fn create_rpc_client_queue(
         &self,
-        channel: ChannelSettings,
         cb_queue: QueueSettings<'_>,
         consumer: ConsumerSettings<'_>,
     ) -> AmqpRpcClient {
@@ -643,7 +646,6 @@ impl AmqpRpcClient {
         routing_key: &str,
     ) -> Result<String, AmqpError> {
         let correlation_id = Uuid::new_v4().to_string();
-        debug!("call - {correlation_id}");
         let x = Amqp::send_message_with_reply(
             &self.channel,
             payload,
@@ -655,5 +657,73 @@ impl AmqpRpcClient {
         .await?;
 
         Ok(x)
+    }
+
+    pub async fn listen<T, E: Error>(
+        &mut self,
+        serialization: SerializationKind,
+        mut on_msg_callback: impl FnMut(T) -> Result<(), E>,
+    ) where
+        T: for<'a> Deserialize<'a> + std::fmt::Debug,
+    {
+        while let Some(delivery) = self.consumer.next().await {
+            if let Ok(delivery) = delivery {
+                let payload: Vec<u8> = delivery.data.clone();
+                let uncompressed_message = match delivery
+                    .properties
+                    .content_encoding()
+                    .clone()
+                    .unwrap_or_else(|| ShortString::from(""))
+                    .as_str()
+                {
+                    "br" => Amqp::decompress_message(payload),
+                    _ => Ok(payload),
+                }
+                .unwrap();
+
+                let deserialized_payload: T =
+                    serialization.from_vec(&uncompressed_message).unwrap();
+
+                match on_msg_callback(deserialized_payload) {
+                    Ok(()) => {
+                        match self
+                            .channel
+                            .basic_ack(delivery.delivery_tag, BasicAckOptions::default())
+                            .await
+                        {
+                            Ok(()) => {
+                                trace!("acknowledged message <{}>", delivery.delivery_tag)
+                            }
+                            Err(error) => error!(
+                                "can't acknowledge message <{}> {}",
+                                delivery.delivery_tag, error
+                            ),
+                        };
+                    }
+                    Err(error) => {
+                        error!("can't act on message <{}> {}", delivery.delivery_tag, error);
+                        match self
+                            .channel
+                            .basic_nack(
+                                delivery.delivery_tag,
+                                BasicNackOptions {
+                                    multiple: false,
+                                    requeue: true,
+                                },
+                            )
+                            .await
+                        {
+                            Ok(()) => {
+                                trace!("negative acknowledged message <{}>", delivery.delivery_tag)
+                            }
+                            Err(error) => error!(
+                                "can't negative acknowledge message <{}> {}",
+                                delivery.delivery_tag, error
+                            ),
+                        };
+                    }
+                }
+            }
+        }
     }
 }

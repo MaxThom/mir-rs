@@ -1,4 +1,4 @@
-use std::{fmt, path::PathBuf, str::FromStr};
+use std::{fmt, path::PathBuf, str::FromStr, sync::Arc};
 
 use clap::ArgMatches;
 use log::info;
@@ -21,7 +21,7 @@ pub struct MirShipyard {
     thread_count: Option<usize>,
     log_level: Option<String>,
     cli: Option<ArgMatches>,
-    desired_callback: Option<Box<dyn FnMut(Option<Properties>)>>,
+    desired_callback: Option<Box<dyn FnMut(Option<Properties>) + Send + Sync>>,
 }
 
 impl fmt::Debug for MirShipyard {
@@ -112,9 +112,9 @@ impl MirShipyard {
         self
     }
 
-    pub fn with_desired_properties_handler<T>(
+    pub fn with_desired_properties_handler(
         &mut self,
-        callback: impl FnMut(Option<Properties>) + 'static,
+        callback: impl FnMut(Option<Properties>) + Send + Sync + 'static,
     ) -> &mut Self {
         self.desired_callback = Some(Box::new(callback));
         self
@@ -125,7 +125,8 @@ impl MirShipyard {
         let mut dizer = Dizer {
             amqp: Amqp::new("".to_string(), 1), // TODO: Use trait object that abstract Amqp
             config: Config::default(),
-            desired_prop_queue: None,
+            receive_message_queue: None,
+            desired_prop_callback: Arc::new(self.desired_callback.take().into()),
         };
 
         // Default < Builder < Configfile < Cli

@@ -1,19 +1,28 @@
 use crate::error::DizerError;
 use chrono::Utc;
+use futures::StreamExt;
 use lapin::{
-    options::{BasicConsumeOptions, QueueDeclareOptions},
-    types::FieldTable,
+    options::{BasicAckOptions, BasicConsumeOptions, QueueDeclareOptions},
+    types::{FieldTable, ShortString},
 };
-use log::{debug, error, info};
+use log::{debug, error, info, trace};
 use serde::Deserialize;
-use std::{fmt::Error, time::Duration};
+use std::{
+    fmt::{self, Error},
+    sync::Arc,
+    time::Duration,
+};
+use std::{option::Option, sync::Mutex};
 use tokio::time;
 use x::{
     device_twin::{DeviceTwin, Properties},
     telemetry::{DeviceDesiredRequest, DeviceHeartbeatRequest, DeviceTelemetryRequest, Telemetry},
 };
-use y::clients::amqp::{
-    Amqp, AmqpError, AmqpRpcClient, ChannelSettings, ConsumerSettings, QueueSettings,
+use y::{
+    clients::amqp::{
+        Amqp, AmqpError, AmqpRpcClient, ChannelSettings, ConsumerSettings, QueueSettings,
+    },
+    utils::serialization::SerializationKind,
 };
 
 const RMQ_STREAM_EXCHANGE_NAME: &str = "iot-stream";
@@ -27,11 +36,40 @@ const RMQ_TWIN_DESIRED_PROP_ROUTING_KEY: &str = "dizer.desired.v1";
 
 const HEARTHBEAT_INTERVAL: Duration = Duration::from_secs(60);
 
-#[derive(Debug, Clone)]
 pub struct Dizer {
     pub config: Config,
     pub(crate) amqp: Amqp,
-    pub desired_prop_queue: Option<DesiredPropertiesQueue>,
+    pub receive_message_queue: Option<DesiredPropertiesQueue>,
+    // TODO: could offer Fn instead of FnMut as well
+    pub desired_prop_callback: Arc<Mutex<Option<Box<dyn FnMut(Option<Properties>) + Send + Sync>>>>,
+}
+
+impl Clone for Dizer {
+    fn clone(&self) -> Self {
+        let mut cloned = Dizer {
+            config: self.config.clone(),
+            amqp: self.amqp.clone(),
+            receive_message_queue: self.receive_message_queue.clone(),
+            desired_prop_callback: Arc::new(Mutex::new(None)),
+        };
+        cloned
+            .desired_prop_callback
+            .clone_from(&self.desired_prop_callback);
+        cloned
+    }
+}
+
+impl fmt::Debug for Dizer {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let cb = self.desired_prop_callback.lock().unwrap();
+        let desired_cb = if let Some(_) = *cb { "Some" } else { "None" };
+
+        f.debug_struct("Dizer")
+            .field("config", &self.config)
+            .field("amqp", &self.amqp)
+            .field("desired_prop_queue", &self.receive_message_queue)
+            .finish()
+    }
 }
 
 #[derive(Debug, Default, Deserialize, Clone)]
@@ -52,19 +90,34 @@ impl Dizer {
     pub async fn join_fleet(&mut self) -> Result<(), DizerError> {
         // Create amqp connection pool
         self.amqp = Amqp::new(self.config.mir_addr.clone(), self.config.thread_count);
-        let test = self
+        let connect = self
             .amqp
             .get_connection()
             .await
             .map_err(|_| DizerError::CantConnectToMir)?;
-        debug!("{:?}", test.status());
+        debug!("{:?}", connect.status());
 
         setup_heartbeat_task(self.clone());
 
-        self.desired_prop_queue = Some(DesiredPropertiesQueue {
+        self.receive_message_queue = Some(DesiredPropertiesQueue {
             is_initialized: false,
             rpc_client: create_rpc_client(self.clone()).await,
         });
+
+        // TODO: Setup listen of receive queue and call callback
+        setup_received_message_listen(
+            self.receive_message_queue
+                .as_ref()
+                .unwrap()
+                .rpc_client
+                .clone(),
+            self.desired_prop_callback.clone(),
+        );
+
+        //let mut data = self.desired_prop_callback.lock().unwrap();
+        //if let Some(x) = &mut *data {
+        //    x(None)
+        //};
 
         if let Err(x) = self.send_desired_request().await {
             error!("error requesting desired properties: {}", x)
@@ -120,8 +173,9 @@ impl Dizer {
             timestamp: Utc::now().timestamp_nanos(),
         };
         let str_payload = serde_json::to_string(&payload).unwrap();
+        info!("call - {str_payload}");
         match self
-            .desired_prop_queue
+            .receive_message_queue
             .as_ref()
             .unwrap()
             .rpc_client
@@ -161,6 +215,56 @@ impl Dizer {
     }
 }
 
+fn setup_received_message_listen2(
+    mut c: AmqpRpcClient,
+    desired_prop_callback: Arc<Mutex<Option<Box<dyn FnMut(Option<Properties>) + Send + Sync>>>>,
+) {
+    tokio::spawn(async move {
+        while let Some(delivery) = c.consumer.next().await {
+            if let Ok(delivery) = delivery {
+                let payload: Vec<u8> = delivery.data.clone();
+                let uncompressed_message = match delivery
+                    .properties
+                    .content_encoding()
+                    .clone()
+                    .unwrap_or_else(|| ShortString::from(""))
+                    .as_str()
+                {
+                    "br" => Amqp::decompress_message(payload),
+                    _ => Ok(payload),
+                }
+                .unwrap();
+
+                let deserialized_payload: Option<Properties> = SerializationKind::Json
+                    .from_vec(&uncompressed_message)
+                    .unwrap();
+                let mut data = desired_prop_callback.lock().unwrap();
+                if let Some(x) = &mut *data {
+                    x(deserialized_payload)
+                };
+            }
+        }
+    });
+}
+
+fn setup_received_message_listen(
+    mut c: AmqpRpcClient,
+    desired_prop_callback: Arc<Mutex<Option<Box<dyn FnMut(Option<Properties>) + Send + Sync>>>>,
+) {
+    tokio::spawn(async move {
+        info!("listening to desired properties queue");
+        c.listen(SerializationKind::Json, move |payload| {
+            let mut data = desired_prop_callback.lock().unwrap();
+            if let Some(x) = &mut *data {
+                x(payload);
+            };
+            Ok::<(), Error>(())
+        })
+        .await;
+        info!("stop listening to desired properties queue");
+    });
+}
+
 fn setup_heartbeat_task(dizer: Dizer) {
     tokio::spawn(async move {
         let mut interval = time::interval(HEARTHBEAT_INTERVAL);
@@ -180,7 +284,6 @@ async fn create_rpc_client(dizer: Dizer) -> AmqpRpcClient {
     let rpc_client = dizer
         .amqp
         .create_rpc_client_queue(
-            ChannelSettings::default(),
             QueueSettings {
                 name: dizer.config.device_id.as_str(),
                 options: QueueDeclareOptions {

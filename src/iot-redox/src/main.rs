@@ -99,7 +99,7 @@ async fn main() -> Result<(), Error> {
         settings.thread_count.meta_queue
             + settings.thread_count.reported_queue
             + settings.thread_count.web_srv_queues
-            + 1,
+            + 3,
     );
 
     // Create surrealdb connection. Surreal create handles multiple connections using channel. See .with_capacity(0)
@@ -421,11 +421,7 @@ fn receive_desired_request(
         // Serialize & Send
         let str_twin = serde_json::to_string(&twin.desired_properties).unwrap();
         match amqp
-            .send_message(
-                &str_twin,
-                RMQ_TWIN_EXCHANGE_NAME,
-                ShortString::to_string(&reply_queue).as_str(),
-            )
+            .send_message(&str_twin, "", ShortString::to_string(&reply_queue).as_str())
             .await
         {
             Ok(x) => {
