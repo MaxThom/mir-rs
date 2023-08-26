@@ -97,14 +97,14 @@ impl Dizer {
             .map_err(|_| DizerError::CantConnectToMir)?;
         debug!("{:?}", connect.status());
 
+        // Mata + heathbeat
         setup_heartbeat_task(self.clone());
 
+        // Setup receiving queue for mir -> device communication
         self.receive_message_queue = Some(DesiredPropertiesQueue {
             is_initialized: false,
             rpc_client: create_rpc_client(self.clone()).await,
         });
-
-        // TODO: Setup listen of receive queue and call callback
         setup_received_message_listen(
             self.receive_message_queue
                 .as_ref()
@@ -113,12 +113,6 @@ impl Dizer {
                 .clone(),
             self.desired_prop_callback.clone(),
         );
-
-        //let mut data = self.desired_prop_callback.lock().unwrap();
-        //if let Some(x) = &mut *data {
-        //    x(None)
-        //};
-
         if let Err(x) = self.send_desired_request().await {
             error!("error requesting desired properties: {}", x)
         }
@@ -215,44 +209,13 @@ impl Dizer {
     }
 }
 
-fn setup_received_message_listen2(
-    mut c: AmqpRpcClient,
-    desired_prop_callback: Arc<Mutex<Option<Box<dyn FnMut(Option<Properties>) + Send + Sync>>>>,
-) {
-    tokio::spawn(async move {
-        while let Some(delivery) = c.consumer.next().await {
-            if let Ok(delivery) = delivery {
-                let payload: Vec<u8> = delivery.data.clone();
-                let uncompressed_message = match delivery
-                    .properties
-                    .content_encoding()
-                    .clone()
-                    .unwrap_or_else(|| ShortString::from(""))
-                    .as_str()
-                {
-                    "br" => Amqp::decompress_message(payload),
-                    _ => Ok(payload),
-                }
-                .unwrap();
-
-                let deserialized_payload: Option<Properties> = SerializationKind::Json
-                    .from_vec(&uncompressed_message)
-                    .unwrap();
-                let mut data = desired_prop_callback.lock().unwrap();
-                if let Some(x) = &mut *data {
-                    x(deserialized_payload)
-                };
-            }
-        }
-    });
-}
-
 fn setup_received_message_listen(
     mut c: AmqpRpcClient,
     desired_prop_callback: Arc<Mutex<Option<Box<dyn FnMut(Option<Properties>) + Send + Sync>>>>,
 ) {
     tokio::spawn(async move {
         info!("listening to desired properties queue");
+        // TODO: add loop over listen for error restart
         c.listen(SerializationKind::Json, move |payload| {
             let mut data = desired_prop_callback.lock().unwrap();
             if let Some(x) = &mut *data {
@@ -295,7 +258,6 @@ async fn create_rpc_client(dizer: Dizer) -> AmqpRpcClient {
             ConsumerSettings {
                 consumer_tag: dizer.config.device_id.as_str(),
                 options: BasicConsumeOptions {
-                    no_ack: true,
                     ..Default::default()
                 },
                 arguments: FieldTable::default(),

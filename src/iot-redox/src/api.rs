@@ -5,10 +5,11 @@ use axum::{
     http::StatusCode,
     Json,
 };
-use log::{debug, error, trace};
+use lapin::types::ShortString;
+use log::{debug, error, info, trace, warn};
 use serde_json::{json, Value};
 use surrealdb::{engine::remote::ws::Client, Surreal};
-use x::device_twin::{MetaProperties, NewDevice, Properties, Record, TargetProperties};
+use x::device_twin::{DeviceTwin, MetaProperties, NewDevice, Properties, Record, TargetProperties};
 use y::clients::amqp::Amqp;
 
 use crate::{twin_service::*, RMQ_TWIN_EXCHANGE_NAME};
@@ -118,7 +119,7 @@ pub async fn update_device_twins_properties(
     dbg!(&payload);
 
     // Update db
-    let twins = &update_device_twins_properties_in_db(
+    let updated_twin_result = update_device_twins_properties_in_db(
         state.db.clone(),
         device_id.as_str(),
         &target,
@@ -128,28 +129,37 @@ pub async fn update_device_twins_properties(
     .map_err(|error| {
         error!("Error: {}", error);
         StatusCode::INTERNAL_SERVER_ERROR
-    })?;
+    });
+
+    let updated_twin = if let Err(_) = updated_twin_result {
+        //return Ok(Json(json!({ "result": 200 })));
+        // TODO: proper return when surrealdb is fixed
+        None
+    } else {
+        updated_twin_result.unwrap()
+    };
 
     // Send msg to device with update properties if its desired
     // Create reusable channel
     if target.clone() == TargetProperties::Desired {
+        debug!("sending desired properties to device {device_id}");
         let str_payload = serde_json::to_string(&payload).unwrap();
         match state
             .amqp
-            .send_message(
-                &str_payload,
-                RMQ_TWIN_EXCHANGE_NAME,
-                &format!("{}.desired.v1", device_id.as_str()),
-            )
+            .send_message(&str_payload, "", device_id.as_str())
             .await
         {
-            Ok(_) => trace!("message sent"),
-            Err(error) => error!("can't send message {}", error),
+            Ok(x) => {
+                info!("{x}")
+            }
+            Err(e) => {
+                error!("{:?}", e);
+            } // TODO: Add error type to telemetry sent
         };
     }
 
-    dbg!(&twins);
-    Ok(Json(json!({ "result": twins })))
+    dbg!(&updated_twin);
+    Ok(Json(json!({ "result": updated_twin.unwrap() })))
 }
 
 pub async fn create_device_twins(

@@ -74,7 +74,7 @@ pub enum ConnectionState {
     Disconnected,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Default, Debug, Serialize, Deserialize, Clone)]
 pub struct DeviceTwin {
     pub id: Option<Thing>,
     pub meta_properties: Option<MetaProperties>,
