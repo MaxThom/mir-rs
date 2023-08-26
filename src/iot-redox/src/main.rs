@@ -361,7 +361,7 @@ fn receive_hearthbeat_request(
     let ts = payload.timestamp.clone();
     tokio::spawn(async move {
         // TODO: retry logic
-        let resp = update_hearthbeat_in_db(db, device_id, ts).await;
+        let _ = update_hearthbeat_in_db(db, device_id, ts).await;
         //match resp {
         //    Ok(x) => debug!(
         //        "Updated hearthbeat for device '{}': {:?}",
@@ -388,7 +388,7 @@ fn receive_desired_request(
     reply_to: Option<ShortString>,
 ) -> Result<(), Error> {
     let device_id = payload.device_id.clone();
-    let ts = payload.timestamp.clone();
+    let _ts = payload.timestamp.clone();
     tokio::spawn(async move {
         // TODO: retry logic
         // TODO: should you panic in async? or print out the error?

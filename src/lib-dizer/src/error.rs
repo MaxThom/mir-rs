@@ -1,6 +1,6 @@
 use std::{error, fmt};
 
-use y::clients::amqp::{Amqp, AmqpError};
+use y::clients::amqp::AmqpError;
 
 #[derive(Debug)]
 pub enum DizerBuilderError {

@@ -126,7 +126,6 @@ impl MirShipyard {
         let mut dizer = Dizer {
             amqp: Amqp::new("".to_string(), 1), // TODO: Use trait object that abstract Amqp
             config: Config::default(),
-            receive_message_queue: None,
             desired_prop_callback: Arc::new(self.desired_callback.take().into()),
         };
 

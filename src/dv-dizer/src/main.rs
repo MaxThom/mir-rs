@@ -1,6 +1,6 @@
 use dizer::{builder::MirShipyard, dizer::Dizer};
 use lapin::types::ShortString;
-use log::{debug, error, info, trace};
+use log::{debug, error, info};
 use thiserror::Error as ThisError;
 use tokio::time::{sleep, Duration};
 use tokio_util::sync::CancellationToken;

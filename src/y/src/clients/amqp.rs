@@ -1,5 +1,4 @@
 use std::{
-    collections::HashMap,
     error::Error,
     io::{Read, Write},
     string::FromUtf8Error,
@@ -19,11 +18,10 @@ use lapin::{
 };
 use log::{debug, error, info, trace};
 use serde::Deserialize;
-use surrealdb::sql::Uuid;
 use thiserror::Error as ThisError;
 use tokio_amqp::*;
 
-use crate::utils::serialization::{self, SerializationKind};
+use crate::utils::serialization::SerializationKind;
 
 #[derive(ThisError, Debug)]
 pub enum AmqpError {
@@ -42,13 +40,6 @@ pub enum AmqpError {
 #[derive(Debug, Clone)]
 pub struct Amqp {
     pub pool: Pool,
-}
-
-#[derive(Debug, Clone)]
-pub struct AmqpRpcClient {
-    pub channel: Channel,
-    pub callback_queue: Queue,
-    pub consumer: Consumer,
 }
 
 #[derive(Debug, Clone)]
@@ -222,10 +213,10 @@ impl Amqp {
         arguments: FieldTable,
     ) -> Result<(), AmqpError> {
         let channel = self.get_channel().await?;
-        Ok(channel
+        channel
             .queue_bind(queue, exchange, routing_key, options, arguments)
-            .await
-            .unwrap())
+            .await?;
+        Ok(())
     }
 
     pub async fn bind_queue_with_channel(
@@ -237,10 +228,10 @@ impl Amqp {
         options: QueueBindOptions,
         arguments: FieldTable,
     ) -> Result<(), AmqpError> {
-        Ok(channel
+        channel
             .queue_bind(queue, exchange, routing_key, options, arguments)
-            .await
-            .unwrap())
+            .await?;
+        Ok(())
     }
 
     pub async fn create_consumer(
@@ -391,7 +382,7 @@ impl Amqp {
         index: usize,
         settings: AmqpSettings<'_>,
         serialization: SerializationKind,
-        mut on_msg_callback: impl FnMut(T, Option<ShortString>) -> Result<(), E>,
+        on_msg_callback: impl FnMut(T, Option<ShortString>) -> Result<(), E>,
     ) where
         T: for<'a> Deserialize<'a> + std::fmt::Debug,
     {
@@ -472,7 +463,7 @@ impl Amqp {
         };
 
         // Consumer
-        let mut consumer = match self
+        let consumer = match self
             .create_consumer_with_channel(
                 channel,
                 settings.queue.name,
@@ -515,7 +506,7 @@ impl Amqp {
         consumer_settings: ConsumerSettings<'_>,
         serialization: SerializationKind,
         // TODO: wrap the Option in a Mir structure
-        mut on_msg_callback: impl FnMut(T, Option<ShortString>) -> Result<(), E>,
+        on_msg_callback: impl FnMut(T, Option<ShortString>) -> Result<(), E>,
     ) where
         T: for<'a> Deserialize<'a> + std::fmt::Debug,
     {
@@ -622,155 +613,6 @@ impl Amqp {
                     Err(error) => {
                         error!("can't act on message <{}> {}", delivery.delivery_tag, error);
                         match channel
-                            .basic_nack(
-                                delivery.delivery_tag,
-                                BasicNackOptions {
-                                    multiple: false,
-                                    requeue: true,
-                                },
-                            )
-                            .await
-                        {
-                            Ok(()) => {
-                                trace!("negative acknowledged message <{}>", delivery.delivery_tag)
-                            }
-                            Err(error) => error!(
-                                "can't negative acknowledge message <{}> {}",
-                                delivery.delivery_tag, error
-                            ),
-                        };
-                    }
-                }
-            }
-        }
-    }
-
-    pub async fn create_rpc_client_queue(
-        &self,
-        cb_queue: QueueSettings<'_>,
-        consumer: ConsumerSettings<'_>,
-    ) -> AmqpRpcClient {
-        let ch = &self.get_channel().await.unwrap();
-
-        //ch.basic_qos(channel.prefetch_count, channel.options)
-        //    .await
-        //    .unwrap();
-
-        let callback_queue = match self
-            .declare_queue_with_channel(ch, cb_queue.name, cb_queue.options, cb_queue.arguments)
-            .await
-        {
-            Ok(queue) => {
-                info!("queue <{}> declared", queue.name());
-                queue
-            }
-            Err(error) => {
-                error!("can't create queue <{}> {}", cb_queue.name, error);
-                panic!("{}", error)
-            }
-        };
-
-        let consumer = match self
-            .create_consumer_with_channel(
-                ch,
-                cb_queue.name,
-                consumer.consumer_tag,
-                consumer.options,
-                consumer.arguments,
-            )
-            .await
-        {
-            Ok(consumer) => {
-                info!(
-                    "consumer <{}> to queue <{}> binded",
-                    consumer.tag(),
-                    cb_queue.name
-                );
-                consumer
-            }
-            Err(error) => {
-                error!(
-                    "can't bind consumer and queue <{}> {}",
-                    cb_queue.name, error
-                );
-                panic!("{}", error)
-            }
-        };
-
-        AmqpRpcClient {
-            channel: ch.clone(),
-            callback_queue,
-            consumer,
-        }
-    }
-}
-
-impl AmqpRpcClient {
-    pub async fn call(
-        &self,
-        payload: &str,
-        exchange: &str,
-        routing_key: &str,
-    ) -> Result<String, AmqpError> {
-        let correlation_id = Uuid::new_v4().to_string();
-        let x = Amqp::send_message_with_reply(
-            &self.channel,
-            payload,
-            exchange,
-            routing_key,
-            self.callback_queue.name().as_str(),
-            correlation_id,
-        )
-        .await?;
-
-        Ok(x)
-    }
-
-    pub async fn listen<T, E: Error>(
-        &mut self,
-        serialization: SerializationKind,
-        mut on_msg_callback: impl FnMut(T) -> Result<(), E>,
-    ) where
-        T: for<'a> Deserialize<'a> + std::fmt::Debug,
-    {
-        while let Some(delivery) = self.consumer.next().await {
-            if let Ok(delivery) = delivery {
-                let payload: Vec<u8> = delivery.data.clone();
-                let uncompressed_message = match delivery
-                    .properties
-                    .content_encoding()
-                    .clone()
-                    .unwrap_or_else(|| ShortString::from(""))
-                    .as_str()
-                {
-                    "br" => Amqp::decompress_message(payload),
-                    _ => Ok(payload),
-                }
-                .unwrap();
-
-                let deserialized_payload: T =
-                    serialization.from_vec(&uncompressed_message).unwrap();
-
-                match on_msg_callback(deserialized_payload) {
-                    Ok(()) => {
-                        match self
-                            .channel
-                            .basic_ack(delivery.delivery_tag, BasicAckOptions::default())
-                            .await
-                        {
-                            Ok(()) => {
-                                trace!("acknowledged message <{}>", delivery.delivery_tag)
-                            }
-                            Err(error) => error!(
-                                "can't acknowledge message <{}> {}",
-                                delivery.delivery_tag, error
-                            ),
-                        };
-                    }
-                    Err(error) => {
-                        error!("can't act on message <{}> {}", delivery.delivery_tag, error);
-                        match self
-                            .channel
                             .basic_nack(
                                 delivery.delivery_tag,
                                 BasicNackOptions {

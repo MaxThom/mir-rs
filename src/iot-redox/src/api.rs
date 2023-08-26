@@ -5,14 +5,13 @@ use axum::{
     http::StatusCode,
     Json,
 };
-use lapin::types::ShortString;
-use log::{debug, error, info, trace, warn};
+use log::{debug, error, info};
 use serde_json::{json, Value};
 use surrealdb::{engine::remote::ws::Client, Surreal};
-use x::device_twin::{DeviceTwin, MetaProperties, NewDevice, Properties, Record, TargetProperties};
+use x::device_twin::{MetaProperties, NewDevice, Properties, Record, TargetProperties};
 use y::clients::amqp::Amqp;
 
-use crate::{twin_service::*, RMQ_TWIN_EXCHANGE_NAME};
+use crate::twin_service::*;
 
 pub struct ApiState {
     pub amqp: Amqp,
@@ -23,7 +22,7 @@ const DEVICE_ID_KEY: &str = "device_id";
 
 pub async fn get_records(
     State(state): State<Arc<ApiState>>,
-    Query(params): Query<HashMap<String, String>>,
+    Query(_params): Query<HashMap<String, String>>,
 ) -> Result<Json<Value>, StatusCode> {
     let twins: &Vec<Record> = &state.db.select("device_twin").await.map_err(|error| {
         error!("Error: {}", error);
@@ -131,7 +130,7 @@ pub async fn update_device_twins_properties(
         StatusCode::INTERNAL_SERVER_ERROR
     });
 
-    let updated_twin = if let Err(_) = updated_twin_result {
+    let _ = if let Err(_) = updated_twin_result {
         //return Ok(Json(json!({ "result": 200 })));
         // TODO: proper return when surrealdb is fixed
         None
@@ -158,8 +157,7 @@ pub async fn update_device_twins_properties(
         };
     }
 
-    dbg!(&updated_twin);
-    Ok(Json(json!({ "result": updated_twin.unwrap() })))
+    Ok(Json(json!({ "result": payload })))
 }
 
 pub async fn create_device_twins(
@@ -173,7 +171,7 @@ pub async fn create_device_twins(
         .await
         .map_err(|error| {
             error!("Error: {}", error.to_string());
-            StatusCode::INTERNAL_SERVER_ERROR;
+            StatusCode::INTERNAL_SERVER_ERROR.as_str()
         });
 
     if let Err(error) = created {
