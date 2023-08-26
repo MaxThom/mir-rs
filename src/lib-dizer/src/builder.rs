@@ -1,6 +1,7 @@
 use std::{fmt, path::PathBuf, str::FromStr, sync::Arc};
 
 use clap::ArgMatches;
+use lapin::types::ShortString;
 use log::info;
 use x::device_twin::Properties;
 use y::{
@@ -21,7 +22,7 @@ pub struct MirShipyard {
     thread_count: Option<usize>,
     log_level: Option<String>,
     cli: Option<ArgMatches>,
-    desired_callback: Option<Box<dyn FnMut(Option<Properties>) + Send + Sync>>,
+    desired_callback: Option<Box<dyn FnMut(Option<Properties>, Option<ShortString>) + Send + Sync>>,
 }
 
 impl fmt::Debug for MirShipyard {
@@ -114,7 +115,7 @@ impl MirShipyard {
 
     pub fn with_desired_properties_handler(
         &mut self,
-        callback: impl FnMut(Option<Properties>) + Send + Sync + 'static,
+        callback: impl FnMut(Option<Properties>, Option<ShortString>) + Send + Sync + 'static,
     ) -> &mut Self {
         self.desired_callback = Some(Box::new(callback));
         self

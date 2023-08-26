@@ -41,7 +41,8 @@ pub struct Dizer {
     pub(crate) amqp: Amqp,
     pub receive_message_queue: Option<DesiredPropertiesQueue>,
     // TODO: could offer Fn instead of FnMut as well
-    pub desired_prop_callback: Arc<Mutex<Option<Box<dyn FnMut(Option<Properties>) + Send + Sync>>>>,
+    pub desired_prop_callback:
+        Arc<Mutex<Option<Box<dyn FnMut(Option<Properties>, Option<ShortString>) + Send + Sync>>>>,
 }
 
 impl Clone for Dizer {
@@ -101,21 +102,22 @@ impl Dizer {
         setup_heartbeat_task(self.clone());
 
         // Setup receiving queue for mir -> device communication
-        self.receive_message_queue = Some(DesiredPropertiesQueue {
-            is_initialized: false,
-            rpc_client: create_rpc_client(self.clone()).await,
-        });
-        setup_received_message_listen(
-            self.receive_message_queue
-                .as_ref()
-                .unwrap()
-                .rpc_client
-                .clone(),
-            self.desired_prop_callback.clone(),
-        );
-        if let Err(x) = self.send_desired_request().await {
-            error!("error requesting desired properties: {}", x)
-        }
+        setup_consume_message_received(self.clone(), self.desired_prop_callback.clone());
+        //self.receive_message_queue = Some(DesiredPropertiesQueue {
+        //    is_initialized: false,
+        //    rpc_client: create_rpc_client(self.clone()).await,
+        //});
+        //setup_received_message_listen(
+        //    self.receive_message_queue
+        //        .as_ref()
+        //        .unwrap()
+        //        .rpc_client
+        //        .clone(),
+        //    self.desired_prop_callback.clone(),
+        //);
+        //if let Err(x) = self.send_desired_request().await {
+        //    error!("error requesting desired properties: {}", x)
+        //}
 
         info!(
             "{} (Class Dizer) has joined the fleet 🚀.",
@@ -207,6 +209,47 @@ impl Dizer {
             Err(_) => Err(DizerError::HeathbeatSent), // TODO: Add error type to telemetry sent
         }
     }
+}
+
+fn setup_consume_message_received(
+    dizer: Dizer,
+    desired_prop_callback: Arc<
+        Mutex<Option<Box<dyn FnMut(Option<Properties>, Option<ShortString>) + Send + Sync>>>,
+    >,
+) {
+    tokio::spawn(async move {
+        info!("listening to desired properties queue");
+        // TODO: add loop over listen for error restart
+        dizer
+            .amqp
+            .consume_queue(
+                QueueSettings {
+                    name: dizer.config.device_id.as_str(),
+                    options: QueueDeclareOptions {
+                        exclusive: true,
+                        ..Default::default()
+                    },
+                    arguments: FieldTable::default(),
+                },
+                ConsumerSettings {
+                    consumer_tag: dizer.config.device_id.as_str(),
+                    options: BasicConsumeOptions {
+                        ..Default::default()
+                    },
+                    arguments: FieldTable::default(),
+                },
+                SerializationKind::Json,
+                move |payload, opt| {
+                    let mut data = desired_prop_callback.lock().unwrap();
+                    if let Some(x) = &mut *data {
+                        x(payload, opt);
+                    };
+                    Ok::<(), Error>(())
+                },
+            )
+            .await;
+        info!("stop listening to desired properties queue");
+    });
 }
 
 fn setup_received_message_listen(

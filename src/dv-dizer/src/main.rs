@@ -1,4 +1,5 @@
 use dizer::{builder::MirShipyard, dizer::Dizer};
+use lapin::types::ShortString;
 use log::{debug, error, info, trace};
 use thiserror::Error as ThisError;
 use tokio::time::{sleep, Duration};
@@ -44,7 +45,7 @@ async fn main() -> Result<(), String> {
         .with_mir_server("")
         .with_thread_count(5)
         .with_logger("info")
-        .with_desired_properties_handler(|x: Option<Properties>| {
+        .with_desired_properties_handler(|x: Option<Properties>, _opts: Option<ShortString>| {
             info!("DESIRED properties handler: {:?}", x);
         })
         .build();

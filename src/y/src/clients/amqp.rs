@@ -504,6 +504,82 @@ impl Amqp {
 
         // Liscen to topic queue exchange
         info!("{}: consumer <{}> is liscening", index, consumer.tag());
+        self.listen(channel, consumer, serialization, on_msg_callback)
+            .await;
+        debug!("{}: Shutting down...", index);
+    }
+
+    pub async fn consume_queue<T, E: Error>(
+        &self,
+        queue_settings: QueueSettings<'_>,
+        consumer_settings: ConsumerSettings<'_>,
+        serialization: SerializationKind,
+        // TODO: wrap the Option in a Mir structure
+        mut on_msg_callback: impl FnMut(T, Option<ShortString>) -> Result<(), E>,
+    ) where
+        T: for<'a> Deserialize<'a> + std::fmt::Debug,
+    {
+        let channel = &self.get_channel().await.unwrap();
+
+        let _ = match self
+            .declare_queue_with_channel(
+                channel,
+                queue_settings.name,
+                queue_settings.options,
+                queue_settings.arguments,
+            )
+            .await
+        {
+            Ok(queue) => {
+                info!("queue <{}> declared", queue.name());
+                queue
+            }
+            Err(error) => {
+                error!("can't create queue <{}> {}", queue_settings.name, error);
+                panic!("{}", error)
+            }
+        };
+
+        let consumer = match self
+            .create_consumer_with_channel(
+                channel,
+                queue_settings.name,
+                consumer_settings.consumer_tag,
+                consumer_settings.options,
+                consumer_settings.arguments,
+            )
+            .await
+        {
+            Ok(consumer) => {
+                info!(
+                    "consumer <{}> to queue <{}> binded",
+                    consumer.tag(),
+                    queue_settings.name
+                );
+                consumer
+            }
+            Err(error) => {
+                error!(
+                    "can't bind consumer and queue <{}> {}",
+                    queue_settings.name, error
+                );
+                panic!("{}", error)
+            }
+        };
+        info!("consumer <{}> is liscening", consumer.tag());
+        self.listen(channel, consumer, serialization, on_msg_callback)
+            .await;
+    }
+
+    pub async fn listen<T, E: Error>(
+        &self,
+        channel: &Channel,
+        mut consumer: Consumer,
+        serialization: SerializationKind,
+        mut on_msg_callback: impl FnMut(T, Option<ShortString>) -> Result<(), E>,
+    ) where
+        T: for<'a> Deserialize<'a> + std::fmt::Debug,
+    {
         while let Some(delivery) = consumer.next().await {
             if let Ok(delivery) = delivery {
                 let reply_to = if let Some(x) = delivery.properties.reply_to().as_ref() {
@@ -527,7 +603,6 @@ impl Amqp {
 
                 let deserialized_payload: T =
                     serialization.from_vec(&uncompressed_message).unwrap();
-                debug!("{}: {:?}", index, deserialized_payload);
 
                 match on_msg_callback(deserialized_payload, Some(reply_to)) {
                     Ok(()) => {
@@ -535,22 +610,17 @@ impl Amqp {
                             .basic_ack(delivery.delivery_tag, BasicAckOptions::default())
                             .await
                         {
-                            Ok(()) => trace!(
-                                "{}: acknowledged message <{}>",
-                                index,
-                                delivery.delivery_tag
-                            ),
+                            Ok(()) => {
+                                trace!("acknowledged message <{}>", delivery.delivery_tag)
+                            }
                             Err(error) => error!(
-                                "{}: can't acknowledge message <{}> {}",
-                                index, delivery.delivery_tag, error
+                                "can't acknowledge message <{}> {}",
+                                delivery.delivery_tag, error
                             ),
                         };
                     }
                     Err(error) => {
-                        error!(
-                            "{}: can't act on message <{}> {}",
-                            index, delivery.delivery_tag, error
-                        );
+                        error!("can't act on message <{}> {}", delivery.delivery_tag, error);
                         match channel
                             .basic_nack(
                                 delivery.delivery_tag,
@@ -561,21 +631,18 @@ impl Amqp {
                             )
                             .await
                         {
-                            Ok(()) => trace!(
-                                "{}: negative acknowledged message <{}>",
-                                index,
-                                delivery.delivery_tag
-                            ),
+                            Ok(()) => {
+                                trace!("negative acknowledged message <{}>", delivery.delivery_tag)
+                            }
                             Err(error) => error!(
-                                "{}: can't negative acknowledge message <{}> {}",
-                                index, delivery.delivery_tag, error
+                                "can't negative acknowledge message <{}> {}",
+                                delivery.delivery_tag, error
                             ),
                         };
                     }
                 }
-            };
+            }
         }
-        debug!("{}: Shutting down...", index);
     }
 
     pub async fn create_rpc_client_queue(
