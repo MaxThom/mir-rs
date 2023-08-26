@@ -5,7 +5,7 @@ use lapin::{
     types::{FieldTable, ShortString},
 };
 use log::{debug, error, info};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::{
     fmt::{self, Error},
     sync::Arc,
@@ -124,15 +124,26 @@ impl Dizer {
         };
 
         // Serialize & Send
-        let str_payload = serde_json::to_string(&payload).unwrap();
-        debug!("{:?}", str_payload);
+        self.send_data_as_type(RMQ_STREAM_ROUTING_KEY, payload)
+            .await
+    }
+
+    // TODO: Offer json serialization, msgpack, others
+    pub async fn send_data_as_type<T>(&self, routing_key: &str, data: T) -> Result<&str, DizerError>
+    where
+        T: Serialize,
+    {
+        // Serialize & Send
+        let str_data = serde_json::to_string(&data).unwrap();
+        self.send_data(routing_key, &str_data).await
+    }
+
+    pub async fn send_data(&self, routing_key: &str, data: &str) -> Result<&str, DizerError> {
+        // Serialize & Send
+        debug!("{:?}", data);
         match self
             .amqp
-            .send_message(
-                &str_payload,
-                RMQ_STREAM_EXCHANGE_NAME,
-                RMQ_STREAM_ROUTING_KEY,
-            )
+            .send_message(&data, RMQ_STREAM_EXCHANGE_NAME, routing_key)
             .await
         {
             Ok(x) => Ok(x),

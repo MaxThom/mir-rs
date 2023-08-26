@@ -35,6 +35,7 @@ pub enum DizerError {
     // TODO: add address param for display
     CantConnectToMir,
     TelemetrySent,
+    DataSent,
     HeathbeatSent,
     Unknown,
     CantRequestDesiredProperties(AmqpError),
@@ -52,6 +53,9 @@ impl fmt::Display for DizerError {
             DizerError::TelemetrySent => {
                 write!(f, "error sending telemetry")
             }
+            DizerError::DataSent => {
+                write!(f, "error sending data")
+            }
             DizerError::HeathbeatSent => {
                 write!(f, "error sending heartbeat")
             }
@@ -68,6 +72,7 @@ impl error::Error for DizerError {
             DizerError::CantConnectToMir => None,
             DizerError::Unknown => None,
             DizerError::TelemetrySent => None,
+            DizerError::DataSent => None,
             DizerError::HeathbeatSent => None,
             DizerError::CantRequestDesiredProperties(_) => None,
         }

@@ -16,30 +16,3 @@
 
 <https://github.com/surrealdb/surrealdb/blob/main/lib/examples/query/main.rs>
 
-TODO - Redox
-
-- [x] create a device twin from api
-- [x] able to retrieve device twin or parts of it via api
-- [x] able to update tags for twin
-- [x] able to update desired properties for twin
-  - [ ] send a message to the device with updated desired properties
-- [ ] read reported properties messages
-  - [ ] update reported properties of device twin in db
-- [ ] read meta messages
-  - [ ] update device_twin meta section with heartbeat
-
-TODO - Swarm
-
-- [ ] add device twin support
-
-TODO - Oxi
-
-- [ ] start
-
-TODO - Dizer
-
-- [ ] start
-
-TODO - Cockpit
-
-- [ ] start

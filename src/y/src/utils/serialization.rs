@@ -1,5 +1,5 @@
+use serde::{Deserialize, Serialize};
 use std::num::ParseIntError;
-use serde::{Serialize, Deserialize};
 use thiserror::Error as ThisError;
 
 #[derive(ThisError, Debug)]
@@ -28,21 +28,19 @@ impl SerializationKind {
 
     pub fn to_vec<T: Serialize>(&self, payload: &T) -> Result<Vec<u8>, SerializationError> {
         match self {
-            Self::Json => {
-                Ok(serde_json::to_vec(payload).unwrap())
-            },
+            Self::Json => Ok(serde_json::to_vec(payload).unwrap()),
             Self::MsgPack => todo!(),
             Self::Yaml => todo!(),
         }
     }
-    pub fn from_vec<'a, T: Deserialize<'a>>(&self, payload: &'a Vec<u8>) -> Result<T, SerializationError> {
+    pub fn from_vec<'a, T: Deserialize<'a>>(
+        &self,
+        payload: &'a Vec<u8>,
+    ) -> Result<T, SerializationError> {
         match self {
-            Self::Json => {
-                Ok(serde_json::from_slice(&payload).unwrap())
-            },
+            Self::Json => Ok(serde_json::from_slice(&payload).unwrap()),
             Self::MsgPack => todo!(),
             Self::Yaml => todo!(),
         }
     }
 }
-

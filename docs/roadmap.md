@@ -28,13 +28,16 @@
 - [x] create builder pattern for dizer
 - [x] config, logging, cli
 - [x] send telemetry
+- [x] send general message
+  - [x] with type json serialization
+  - [x] your own str
 - [x] heartbeat + metadata
-- [ ] initial pulling of desired properties
-  - [ ] using rpc
+- [x] initial pulling of desired properties
+  - [x] using rpc
     - [x] client side, send message
     - [x] client side, set up callback and await message from queue
     - [x] server side
-    - [ ] remove rpcclient and set a queue listen in AMQP
+    - [x] remove rpcclient and set a queue listen in AMQP
 - [x] retrieve desired properties
   - [x] connect to desired properties queue. [See ADR-11], --> no need for persistent queue if device disconect
   - [x] in redox, add new properties update in rest endpoint to device queue
