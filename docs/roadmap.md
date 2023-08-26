@@ -8,8 +8,8 @@
 - [x] able to update tags for twin
 - [x] able to update desired properties for twin
   - [x] send a message to the device with updated desired properties
-- [ ] read reported properties messages
-  - [ ] update reported properties of device twin in db
+- [x] read reported properties messages
+  - [x] update reported properties of device twin in db
 - [x] read meta messages
   - [x] update device_twin meta section with heartbeat
 
@@ -42,6 +42,10 @@
   - [x] connect to desired properties queue. [See ADR-11], --> no need for persistent queue if device disconect
   - [x] in redox, add new properties update in rest endpoint to device queue
 - [ ] update reported properties
+  - [x] send properties to redox
+  - [ ] move handler to dizer and not shipyard
+  - [ ] add multiple hanldler
+
 
 ## Cockpit
 

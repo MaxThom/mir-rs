@@ -1,6 +1,7 @@
 use dizer::{builder::MirShipyard, dizer::Dizer};
 use lapin::types::ShortString;
 use log::{debug, error, info};
+use serde_json::json;
 use thiserror::Error as ThisError;
 use tokio::time::{sleep, Duration};
 use tokio_util::sync::CancellationToken;
@@ -43,7 +44,7 @@ async fn main() -> Result<(), String> {
         .with_config_file("")
         .with_device_id("012xwf===")
         .with_mir_server("")
-        .with_thread_count(5)
+        .with_thread_count(7)
         .with_logger("info")
         .with_desired_properties_handler(|x: Option<Properties>, _opts: Option<ShortString>| {
             info!("DESIRED properties handler: {:?}", x);
@@ -57,6 +58,18 @@ async fn main() -> Result<(), String> {
     // Connect to mir
     if let Err(x) = dizer.join_fleet().await {
         return Err(format!("error joining fleet: {}", x));
+    }
+
+    let req = dizer
+        .send_reported_properties_request(Properties {
+            properties: json!({ "battery": "included" }),
+            version: 7,
+        })
+        .await;
+    if let Err(e) = req {
+        error!("error sending reported properties request: {}", e);
+    } else {
+        info!("reported properties request sent: {}", req.unwrap());
     }
 
     // Do stuff

@@ -37,6 +37,7 @@ pub enum DizerError {
     TelemetrySent,
     DataSent,
     HeathbeatSent,
+    ReportedSent,
     Unknown,
     CantRequestDesiredProperties(AmqpError),
 }
@@ -59,6 +60,9 @@ impl fmt::Display for DizerError {
             DizerError::HeathbeatSent => {
                 write!(f, "error sending heartbeat")
             }
+            DizerError::ReportedSent => {
+                write!(f, "error sending reported properties")
+            }
             DizerError::CantRequestDesiredProperties(x) => {
                 write!(f, "error sending request for desired properties: {x}")
             }
@@ -74,6 +78,7 @@ impl error::Error for DizerError {
             DizerError::TelemetrySent => None,
             DizerError::DataSent => None,
             DizerError::HeathbeatSent => None,
+            DizerError::ReportedSent => None,
             DizerError::CantRequestDesiredProperties(_) => None,
         }
     }

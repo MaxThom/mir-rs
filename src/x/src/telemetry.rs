@@ -2,6 +2,8 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
+use crate::device_twin::Properties;
+
 // TODO: Payload is a Generic so user can send whatever
 //       And they should not care about metadata of the payload
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
@@ -29,4 +31,11 @@ pub struct DeviceHeartbeatRequest {
 pub struct DeviceDesiredRequest {
     pub device_id: String,
     pub timestamp: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct DeviceReportedRequest {
+    pub device_id: String,
+    pub timestamp: i64,
+    pub reported_properties: Properties,
 }

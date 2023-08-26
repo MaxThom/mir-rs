@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use axum::http::StatusCode;
 use axum::{routing::get, Router};
 use lapin::types::ShortString;
 use lapin::ExchangeKind;
@@ -15,7 +16,8 @@ use log::{debug, error, info, trace};
 use thiserror::Error as ThisError;
 use tokio_util::sync::CancellationToken;
 
-use x::telemetry::{DeviceDesiredRequest, DeviceHeartbeatRequest};
+use x::device_twin::TargetProperties;
+use x::telemetry::{DeviceDesiredRequest, DeviceHeartbeatRequest, DeviceReportedRequest};
 use y::clients::amqp::{
     Amqp, AmqpSettings, ChannelSettings, ConsumerSettings, ExchangeSettings, QueueBindSettings,
     QueueSettings,
@@ -302,10 +304,7 @@ async fn start_consuming_topic_queue_reported(index: usize, amqp: Amqp, db: Surr
             index,
             settings,
             SerializationKind::Json,
-            move |payload, reply_to| {
-                // TODO
-                receive_desired_request(db.clone(), amqp.clone(), payload, reply_to)
-            },
+            move |payload, _| receive_reported_request(db.clone(), payload),
         )
         .await;
     debug!("{}: Shutting down...", index);
@@ -430,6 +429,40 @@ fn receive_desired_request(
             Err(e) => {
                 error!("{:?}", e);
             } // TODO: Add error type to telemetry sent
+        };
+    });
+
+    Ok(())
+}
+
+fn receive_reported_request(
+    db: Surreal<Client>,
+    payload: DeviceReportedRequest,
+) -> Result<(), Error> {
+    let device_id = payload.device_id.clone();
+    let ts = payload.timestamp.clone();
+    tokio::spawn(async move {
+        // TODO: retry logic
+
+        // Update db
+        let updated_twin_result = update_device_twins_properties_in_db(
+            db.clone(),
+            device_id.as_str(),
+            &TargetProperties::Reported,
+            &payload.reported_properties,
+        )
+        .await
+        .map_err(|error| {
+            error!("Error: {}", error);
+            StatusCode::INTERNAL_SERVER_ERROR
+        });
+
+        let _ = if let Err(_) = updated_twin_result {
+            //return Ok(Json(json!({ "result": 200 })));
+            // TODO: proper return when surrealdb is fixed
+            None
+        } else {
+            updated_twin_result.unwrap()
         };
     });
 

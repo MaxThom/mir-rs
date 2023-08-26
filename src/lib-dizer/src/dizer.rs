@@ -15,7 +15,10 @@ use std::{option::Option, sync::Mutex};
 use tokio::time;
 use x::{
     device_twin::Properties,
-    telemetry::{DeviceDesiredRequest, DeviceHeartbeatRequest, DeviceTelemetryRequest, Telemetry},
+    telemetry::{
+        DeviceDesiredRequest, DeviceHeartbeatRequest, DeviceReportedRequest,
+        DeviceTelemetryRequest, Telemetry,
+    },
 };
 use y::{
     clients::amqp::{Amqp, AmqpError, ConsumerSettings, QueueSettings},
@@ -28,6 +31,7 @@ const RMQ_STREAM_ROUTING_KEY: &str = "dizer.telemetry.v1";
 const RMQ_TWIN_EXCHANGE_NAME: &str = "iot-twin";
 const RMQ_TWIN_HEARTHBEAT_ROUTING_KEY: &str = "dizer.hearthbeat.v1";
 const RMQ_TWIN_DESIRED_PROP_ROUTING_KEY: &str = "dizer.desired.v1";
+const RMQ_TWIN_REPORTED_PROP_ROUTING_KEY: &str = "dizer.reported.v1";
 //const RMQ_TWIN_DESIRED_QUEUE_NAME: &str = "iot-q-twin-desired";
 //const RMQ_TWIN_REPORTED_QUEUE_NAME: &str = "iot-q-twin-reported";
 
@@ -35,7 +39,7 @@ const HEARTHBEAT_INTERVAL: Duration = Duration::from_secs(60);
 
 pub struct Dizer {
     pub config: Config,
-    pub(crate) amqp: Amqp,
+    pub amqp: Amqp,
     // TODO: could offer Fn instead of FnMut as well
     pub desired_prop_callback:
         Arc<Mutex<Option<Box<dyn FnMut(Option<Properties>, Option<ShortString>) + Send + Sync>>>>,
@@ -94,7 +98,7 @@ impl Dizer {
         setup_consume_message_received(self.clone(), self.desired_prop_callback.clone());
 
         // Request initial desired properties from mir
-        if let Err(x) = self.send_desired_request().await {
+        if let Err(x) = self.send_desired_properties_request().await {
             error!("error requesting desired properties: {}", x)
         }
 
@@ -151,7 +155,7 @@ impl Dizer {
         }
     }
 
-    pub async fn send_desired_request(&self) -> Result<(), AmqpError> {
+    pub async fn send_desired_properties_request(&self) -> Result<(), AmqpError> {
         //TODO: .is_initialized
         let channel = self.amqp.get_channel().await?;
         let payload = DeviceDesiredRequest {
@@ -196,6 +200,33 @@ impl Dizer {
         {
             Ok(x) => Ok(x),
             Err(_) => Err(DizerError::HeathbeatSent), // TODO: Add error type to telemetry sent
+        }
+    }
+
+    pub async fn send_reported_properties_request(
+        &self,
+        properties: Properties,
+    ) -> Result<&str, DizerError> {
+        let payload = DeviceReportedRequest {
+            device_id: self.config.device_id.clone(),
+            timestamp: Utc::now().timestamp_nanos(),
+            reported_properties: properties,
+        };
+
+        // Serialize & Send
+        let str_payload = serde_json::to_string(&payload).unwrap();
+        debug!("{:?}", str_payload);
+        match self
+            .amqp
+            .send_message(
+                &str_payload,
+                RMQ_TWIN_EXCHANGE_NAME,
+                RMQ_TWIN_REPORTED_PROP_ROUTING_KEY,
+            )
+            .await
+        {
+            Ok(x) => Ok(x),
+            Err(_) => Err(DizerError::ReportedSent),
         }
     }
 }
