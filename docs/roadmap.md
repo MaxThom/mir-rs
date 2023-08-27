@@ -43,7 +43,10 @@
   - [x] in redox, add new properties update in rest endpoint to device queue
 - [ ] update reported properties
   - [x] send properties to redox
-  - [ ] move handler to dizer and not shipyard
+  - [x] move handler to dizer and not shipyard
+  - [ ] set dizer as Arc, without Arc to help clone dizer, we cant do setup before join_fleet, because the clone is before join_fleet who
+  initialize the amqp connection
+  - [ ] add future as callback as well of of FnMut
   - [ ] add multiple hanldler
 
 

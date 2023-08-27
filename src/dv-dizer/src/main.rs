@@ -50,10 +50,34 @@ async fn main() -> Result<(), String> {
             info!("DESIRED properties handler: {:?}", x);
         })
         .build();
-    if let Err(x) = dizer_builder {
+
+    let mut dizer = if let Err(x) = dizer_builder {
         return Err(format!("error initializing Dizer: {}", x));
-    }
-    let mut dizer = dizer_builder.unwrap();
+    } else {
+        dizer_builder.unwrap()
+    };
+
+    let cloned_dizer = dizer.clone();
+    // Do setup
+    dizer.add_desired_properties_handler(
+        move |x: Option<Properties>, _opts: Option<ShortString>| {
+            info!("NEW DESIRED properties handler: {:?}", x);
+            let cloned_cloned_dizer = cloned_dizer.clone();
+            tokio::spawn(async move {
+                let req = cloned_cloned_dizer
+                    .send_reported_properties_request(Properties {
+                        properties: json!({ "battery": "included" }),
+                        version: 7,
+                    })
+                    .await;
+                if let Err(e) = req {
+                    error!("error sending reported properties request: {}", e);
+                } else {
+                    info!("reported properties request sent: {}", req.unwrap());
+                }
+            });
+        },
+    );
 
     // Connect to mir
     if let Err(x) = dizer.join_fleet().await {

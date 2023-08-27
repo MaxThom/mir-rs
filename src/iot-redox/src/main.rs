@@ -440,7 +440,7 @@ fn receive_reported_request(
     payload: DeviceReportedRequest,
 ) -> Result<(), Error> {
     let device_id = payload.device_id.clone();
-    let ts = payload.timestamp.clone();
+    let _ts = payload.timestamp.clone();
     tokio::spawn(async move {
         // TODO: retry logic
 

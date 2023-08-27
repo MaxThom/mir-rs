@@ -229,6 +229,14 @@ impl Dizer {
             Err(_) => Err(DizerError::ReportedSent),
         }
     }
+
+    pub fn add_desired_properties_handler(
+        &mut self,
+        callback: impl FnMut(Option<Properties>, Option<ShortString>) + Send + Sync + 'static,
+    ) {
+        //let cb = Some(Box::new(callback));
+        self.desired_prop_callback = Arc::new(Mutex::new(Some(Box::new(callback))));
+    }
 }
 
 fn setup_consume_message_received(

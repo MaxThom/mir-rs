@@ -109,7 +109,7 @@ impl Amqp {
     pub async fn get_channel(&self) -> Result<Channel, AmqpError> {
         // Get connection
         let rmq_con = match self.get_connection().await.map_err(|e| {
-            eprintln!("can't connect to rmq, {}", e);
+            error!("can't connect to rmq, {}", e);
             e
         }) {
             Ok(x) => x,
@@ -117,7 +117,7 @@ impl Amqp {
         };
 
         match rmq_con.create_channel().await.map_err(|e| {
-            eprintln!("can't create channel, {}", e);
+            error!("can't create channel, {}", e);
             e
         }) {
             Ok(x) => Ok(x),
@@ -286,12 +286,12 @@ impl Amqp {
             )
             .await
             .map_err(|e| {
-                eprintln!("can't publish: {}", e);
+                error!("can't publish: {}", e);
                 e
             })?
             .await
             .map_err(|e| {
-                eprintln!("can't publish: {}", e);
+                error!("can't publish: {}", e);
                 e
             }) {
             Ok(x) => x,
@@ -322,12 +322,12 @@ impl Amqp {
             )
             .await
             .map_err(|e| {
-                eprintln!("can't publish: {}", e);
+                error!("can't publish: {}", e);
                 e
             })?
             .await
             .map_err(|e| {
-                eprintln!("can't publish: {}", e);
+                error!("can't publish: {}", e);
                 e
             }) {
             Ok(x) => x,
@@ -363,12 +363,12 @@ impl Amqp {
             )
             .await
             .map_err(|e| {
-                eprintln!("can't publish: {}", e);
+                error!("can't publish: {}", e);
                 e
             })?
             .await
             .map_err(|e| {
-                eprintln!("can't publish: {}", e);
+                error!("can't publish: {}", e);
                 e
             }) {
             Ok(x) => x,
