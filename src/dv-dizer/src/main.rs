@@ -5,6 +5,7 @@ use serde_json::json;
 use thiserror::Error as ThisError;
 use tokio::time::{sleep, Duration};
 use tokio_util::sync::CancellationToken;
+use uuid::Uuid;
 use x::{device_twin::Properties, telemetry::Telemetry};
 use y::utils::telemetry::{PyramidTelemetryGenerator, TelemetryGenerator};
 
@@ -47,7 +48,7 @@ async fn main() -> Result<(), String> {
         .with_thread_count(7)
         .with_logger("info")
         .with_desired_properties_handler(|x: Option<Properties>, _opts: Option<ShortString>| {
-            info!("DESIRED properties handler: {:?}", x);
+            info!("{:?}", x);
         })
         .build();
 
@@ -57,23 +58,21 @@ async fn main() -> Result<(), String> {
         dizer_builder.unwrap()
     };
 
-    let cloned_dizer = dizer.clone();
     // Do setup
+    let cloned_dizer = dizer.clone();
     dizer.add_desired_properties_handler(
         move |x: Option<Properties>, _opts: Option<ShortString>| {
-            info!("NEW DESIRED properties handler: {:?}", x);
+            info!("{:?}", x);
             let cloned_cloned_dizer = cloned_dizer.clone();
             tokio::spawn(async move {
                 let req = cloned_cloned_dizer
                     .send_reported_properties_request(Properties {
-                        properties: json!({ "battery": "included" }),
+                        properties: json!({ "battery": "included", "random": Uuid::new_v4() }),
                         version: 7,
                     })
                     .await;
                 if let Err(e) = req {
                     error!("error sending reported properties request: {}", e);
-                } else {
-                    info!("reported properties request sent: {}", req.unwrap());
                 }
             });
         },
@@ -82,18 +81,6 @@ async fn main() -> Result<(), String> {
     // Connect to mir
     if let Err(x) = dizer.join_fleet().await {
         return Err(format!("error joining fleet: {}", x));
-    }
-
-    let req = dizer
-        .send_reported_properties_request(Properties {
-            properties: json!({ "battery": "included" }),
-            version: 7,
-        })
-        .await;
-    if let Err(e) = req {
-        error!("error sending reported properties request: {}", e);
-    } else {
-        info!("reported properties request sent: {}", req.unwrap());
     }
 
     // Do stuff

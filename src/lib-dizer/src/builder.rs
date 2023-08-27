@@ -122,28 +122,23 @@ impl MirShipyard {
     }
 
     pub fn build(&mut self) -> Result<Dizer, DizerBuilderError> {
-        println!("{:?}", &self);
-        let mut dizer = Dizer {
-            amqp: Amqp::new("".to_string(), 1), // TODO: Use trait object that abstract Amqp
-            config: Config::default(),
-            desired_prop_callback: Arc::new(self.desired_callback.take().into()),
-        };
+        let mut config = Config::default();
 
         // Default < Builder < Configfile < Cli
 
         // Builder
         if let Some(x) = &self.device_id {
-            dizer.config.device_id = x.to_string();
+            config.device_id = x.to_string();
         }
         if let Some(x) = &self.log_level {
-            dizer.config.log_level = x.to_string();
+            config.log_level = x.to_string();
         }
         // Builder
         if let Some(x) = &self.thread_count {
-            dizer.config.thread_count = x.to_owned();
+            config.thread_count = x.to_owned();
         }
         if let Some(x) = &self.mir_addr {
-            dizer.config.mir_addr = x.to_string();
+            config.mir_addr = x.to_string();
         }
 
         // Cli matches
@@ -156,28 +151,32 @@ impl MirShipyard {
 
         // Configfile load
         if let Some(x) = &self.config_file_path {
-            dizer.config = setup_config(APP_NAME, FileFormat::YAML, Some(x)).unwrap();
+            config = setup_config(APP_NAME, FileFormat::YAML, Some(x)).unwrap();
         }
 
         // Logger init
-        if !dizer.config.log_level.is_empty() {
-            setup_logger(dizer.config.log_level.clone())
+        if !config.log_level.is_empty() {
+            setup_logger(config.log_level.clone())
                 .unwrap_or_else(|e| panic!("Invalid logger configuration: {:?}", e));
         } else if let Some(x) = &self.log_level {
             setup_logger(x.to_string())
                 .unwrap_or_else(|e| panic!("Invalid logger configuration: {:?}", e));
         }
 
-        info!("{:?}", dizer.config);
+        info!("Dizer > {:?}", config);
 
-        if dizer.config.device_id.is_empty() {
+        if config.device_id.is_empty() {
             return Err(DizerBuilderError::NoDeviceId);
         }
 
-        if dizer.config.mir_addr.is_empty() {
+        if config.mir_addr.is_empty() {
             return Err(DizerBuilderError::NoMirServer);
         }
 
-        Ok(dizer)
+        Ok(Dizer {
+            amqp: Amqp::new(config.mir_addr.clone(), config.thread_count),
+            config,
+            desired_prop_callback: Arc::new(self.desired_callback.take().into()),
+        })
     }
 }

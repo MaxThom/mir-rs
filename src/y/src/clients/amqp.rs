@@ -16,7 +16,7 @@ use lapin::{
     types::{ShortString, ShortUInt},
     BasicProperties, Channel, ConnectionProperties, Consumer, ExchangeKind, Queue,
 };
-use log::{debug, error, info, trace};
+use log::{debug, error, trace};
 use serde::Deserialize;
 use thiserror::Error as ThisError;
 use tokio_amqp::*;
@@ -402,7 +402,7 @@ impl Amqp {
             )
             .await
         {
-            Ok(()) => info!(
+            Ok(()) => debug!(
                 "{}: topic exchange <{}> declared",
                 index, settings.exchange.name
             ),
@@ -423,7 +423,7 @@ impl Amqp {
             .await
         {
             Ok(queue) => {
-                info!("{}: queue <{}> declared", index, queue.name());
+                debug!("{}: queue <{}> declared", index, queue.name());
                 queue
             }
             Err(error) => {
@@ -447,7 +447,7 @@ impl Amqp {
             )
             .await
         {
-            Ok(()) => info!(
+            Ok(()) => debug!(
                 "{}: topic exchange <{}> and queue <{}> binded",
                 index,
                 settings.exchange.name,
@@ -474,7 +474,7 @@ impl Amqp {
             .await
         {
             Ok(consumer) => {
-                info!(
+                debug!(
                     "{}: consumer <{}> to queue <{}> binded",
                     index,
                     consumer.tag(),
@@ -494,7 +494,7 @@ impl Amqp {
         };
 
         // Liscen to topic queue exchange
-        info!("{}: consumer <{}> is liscening", index, consumer.tag());
+        debug!("{}: consumer <{}> is liscening", index, consumer.tag());
         self.listen(channel, consumer, serialization, on_msg_callback)
             .await;
         debug!("{}: Shutting down...", index);
@@ -522,7 +522,7 @@ impl Amqp {
             .await
         {
             Ok(queue) => {
-                info!("queue <{}> declared", queue.name());
+                debug!("queue <{}> declared", queue.name());
                 queue
             }
             Err(error) => {
@@ -542,7 +542,7 @@ impl Amqp {
             .await
         {
             Ok(consumer) => {
-                info!(
+                debug!(
                     "consumer <{}> to queue <{}> binded",
                     consumer.tag(),
                     queue_settings.name
@@ -557,7 +557,7 @@ impl Amqp {
                 panic!("{}", error)
             }
         };
-        info!("consumer <{}> is liscening", consumer.tag());
+        debug!("consumer <{}> is liscening", consumer.tag());
         self.listen(channel, consumer, serialization, on_msg_callback)
             .await;
     }

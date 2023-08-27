@@ -83,7 +83,6 @@ pub struct Config {
 impl Dizer {
     pub async fn join_fleet(&mut self) -> Result<(), DizerError> {
         // Create amqp connection pool
-        self.amqp = Amqp::new(self.config.mir_addr.clone(), self.config.thread_count);
         let connect = self
             .amqp
             .get_connection()
@@ -98,24 +97,19 @@ impl Dizer {
         setup_consume_message_received(self.clone(), self.desired_prop_callback.clone());
 
         // Request initial desired properties from mir
+        info!("Dizer > sending desired properties initial request");
         if let Err(x) = self.send_desired_properties_request().await {
             error!("error requesting desired properties: {}", x)
         }
 
-        info!(
-            "{} (Class Dizer) has joined the fleet 🚀.",
-            self.config.device_id
-        );
+        info!("Dizer > {} has joined the fleet 🚀.", self.config.device_id);
 
         Ok(())
     }
 
     pub async fn leave_fleet(&mut self) -> Result<(), DizerError> {
         self.amqp.close();
-        info!(
-            "{} (Class Dizer) has left the fleet 🚀.",
-            self.config.device_id
-        );
+        info!("Dizer > {} has left the fleet 🚀.", self.config.device_id);
         Ok(())
     }
 
@@ -163,8 +157,6 @@ impl Dizer {
             timestamp: Utc::now().timestamp_nanos(),
         };
         let str_payload = serde_json::to_string(&payload).unwrap();
-        info!("call - {str_payload}");
-        //let correlation_id = Uuid::new_v4().to_string();
         match Amqp::send_message_with_reply(
             &channel,
             str_payload.as_str(),
@@ -246,7 +238,7 @@ fn setup_consume_message_received(
     >,
 ) {
     tokio::spawn(async move {
-        info!("listening to desired properties queue");
+        info!("Dizer > started consuming desired properties");
         // TODO: add loop over listen for error restart
         dizer
             .amqp
@@ -268,6 +260,7 @@ fn setup_consume_message_received(
                 },
                 SerializationKind::Json,
                 move |payload, opt| {
+                    info!("Dizer > received desired properties message");
                     let mut data = desired_prop_callback.lock().unwrap();
                     if let Some(x) = &mut *data {
                         x(payload, opt);
@@ -276,11 +269,12 @@ fn setup_consume_message_received(
                 },
             )
             .await;
-        info!("stop listening to desired properties queue");
+        info!("Dizer > stopped consuming desired properties");
     });
 }
 
 fn setup_heartbeat_task(dizer: Dizer) {
+    info!("Dizer > started hearthbeat");
     tokio::spawn(async move {
         let mut interval = time::interval(HEARTHBEAT_INTERVAL);
 
