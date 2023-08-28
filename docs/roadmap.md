@@ -45,8 +45,10 @@
   - [x] send properties to redox
   - [x] move handler to dizer and not shipyard
   - [ ] add future as callback as well of of FnMut
-  - [ ] add multiple hanldler
+  - [x] add multiple hanldler
 
+
+## 
 
 ## Cockpit
 

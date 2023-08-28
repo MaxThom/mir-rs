@@ -47,9 +47,6 @@ async fn main() -> Result<(), String> {
         .with_mir_server("")
         .with_thread_count(7)
         .with_logger("info")
-        .with_desired_properties_handler(|x: Option<Properties>, _opts: Option<ShortString>| {
-            info!("{:?}", x);
-        })
         .build();
 
     let mut dizer = if let Err(x) = dizer_builder {

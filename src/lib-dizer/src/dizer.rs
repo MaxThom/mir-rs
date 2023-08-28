@@ -42,7 +42,7 @@ pub struct Dizer {
     pub amqp: Amqp,
     // TODO: could offer Fn instead of FnMut as well
     pub desired_prop_callback:
-        Arc<Mutex<Option<Box<dyn FnMut(Option<Properties>, Option<ShortString>) + Send + Sync>>>>,
+        Arc<Mutex<Vec<Box<dyn FnMut(Option<Properties>, Option<ShortString>) + Send + Sync>>>>,
 }
 
 impl Clone for Dizer {
@@ -50,7 +50,7 @@ impl Clone for Dizer {
         let mut cloned = Dizer {
             config: self.config.clone(),
             amqp: self.amqp.clone(),
-            desired_prop_callback: Arc::new(Mutex::new(None)),
+            desired_prop_callback: Arc::new(Mutex::new(Vec::new())),
         };
         cloned
             .desired_prop_callback
@@ -62,7 +62,8 @@ impl Clone for Dizer {
 impl fmt::Debug for Dizer {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let cb = self.desired_prop_callback.lock().unwrap();
-        let msg_cb = if let Some(_) = *cb { "Some" } else { "None" };
+        let msg_cb = cb.len();
+        //let msg_cb = if let Some(_) = *cb { "Some" } else { "None" };
 
         f.debug_struct("Dizer")
             .field("config", &self.config)
@@ -97,19 +98,19 @@ impl Dizer {
         setup_consume_message_received(self.clone(), self.desired_prop_callback.clone());
 
         // Request initial desired properties from mir
-        info!("Dizer > sending desired properties initial request");
+        info!("sending desired properties initial request");
         if let Err(x) = self.send_desired_properties_request().await {
             error!("error requesting desired properties: {}", x)
         }
 
-        info!("Dizer > {} has joined the fleet 🚀.", self.config.device_id);
+        info!("{} has joined the fleet 🚀.", self.config.device_id);
 
         Ok(())
     }
 
     pub async fn leave_fleet(&mut self) -> Result<(), DizerError> {
         self.amqp.close();
-        info!("Dizer > {} has left the fleet 🚀.", self.config.device_id);
+        info!("{} has left the fleet 🚀.", self.config.device_id);
         Ok(())
     }
 
@@ -227,18 +228,22 @@ impl Dizer {
         callback: impl FnMut(Option<Properties>, Option<ShortString>) + Send + Sync + 'static,
     ) {
         //let cb = Some(Box::new(callback));
-        self.desired_prop_callback = Arc::new(Mutex::new(Some(Box::new(callback))));
+        //self.desired_prop_callback = Arc::new(Mutex::new(Some(Box::new(callback))));
+        self.desired_prop_callback
+            .lock()
+            .unwrap()
+            .push(Box::new(callback));
     }
 }
 
 fn setup_consume_message_received(
     dizer: Dizer,
     desired_prop_callback: Arc<
-        Mutex<Option<Box<dyn FnMut(Option<Properties>, Option<ShortString>) + Send + Sync>>>,
+        Mutex<Vec<Box<dyn FnMut(Option<Properties>, Option<ShortString>) + Send + Sync>>>,
     >,
 ) {
     tokio::spawn(async move {
-        info!("Dizer > started consuming desired properties");
+        info!("started consuming desired properties");
         // TODO: add loop over listen for error restart
         dizer
             .amqp
@@ -259,22 +264,22 @@ fn setup_consume_message_received(
                     arguments: FieldTable::default(),
                 },
                 SerializationKind::Json,
-                move |payload, opt| {
-                    info!("Dizer > received desired properties message");
+                move |payload: Option<Properties>, opt: Option<ShortString>| {
+                    info!("received desired properties message");
                     let mut data = desired_prop_callback.lock().unwrap();
-                    if let Some(x) = &mut *data {
-                        x(payload, opt);
-                    };
+                    for cb in &mut *data {
+                        cb(payload.clone(), opt.clone());
+                    }
                     Ok::<(), Error>(())
                 },
             )
             .await;
-        info!("Dizer > stopped consuming desired properties");
+        info!("stopped consuming desired properties");
     });
 }
 
 fn setup_heartbeat_task(dizer: Dizer) {
-    info!("Dizer > started hearthbeat");
+    info!("started hearthbeat");
     tokio::spawn(async move {
         let mut interval = time::interval(HEARTHBEAT_INTERVAL);
 

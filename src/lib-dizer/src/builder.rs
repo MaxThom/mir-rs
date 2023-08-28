@@ -1,9 +1,11 @@
-use std::{fmt, path::PathBuf, str::FromStr, sync::Arc};
+use std::{
+    path::PathBuf,
+    str::FromStr,
+    sync::{Arc, Mutex},
+};
 
 use clap::ArgMatches;
-use lapin::types::ShortString;
 use log::info;
-use x::device_twin::Properties;
 use y::{
     clients::amqp::Amqp,
     utils::{config::FileFormat, setup_cli, setup_config, setup_logger},
@@ -14,7 +16,7 @@ use crate::{
     error::DizerBuilderError,
 };
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct MirShipyard {
     config_file_path: Option<PathBuf>,
     device_id: Option<String>,
@@ -22,27 +24,6 @@ pub struct MirShipyard {
     thread_count: Option<usize>,
     log_level: Option<String>,
     cli: Option<ArgMatches>,
-    desired_callback: Option<Box<dyn FnMut(Option<Properties>, Option<ShortString>) + Send + Sync>>,
-}
-
-impl fmt::Debug for MirShipyard {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let desired_cb = if let Some(_) = &self.desired_callback {
-            "Some"
-        } else {
-            "None"
-        };
-
-        f.debug_struct("MirShipyard")
-            .field("config_file_path", &self.config_file_path)
-            .field("device_id", &self.device_id)
-            .field("mir_addr", &self.mir_addr)
-            .field("thread_count", &self.thread_count)
-            .field("log_level", &self.log_level)
-            .field("cli", &self.cli)
-            .field("desired_callback", &desired_cb)
-            .finish()
-    }
 }
 
 const APP_NAME: &str = "dizer";
@@ -56,7 +37,6 @@ impl MirShipyard {
             thread_count: None,
             log_level: None,
             cli: None,
-            desired_callback: None,
         }
     }
 
@@ -113,14 +93,6 @@ impl MirShipyard {
         self
     }
 
-    pub fn with_desired_properties_handler(
-        &mut self,
-        callback: impl FnMut(Option<Properties>, Option<ShortString>) + Send + Sync + 'static,
-    ) -> &mut Self {
-        self.desired_callback = Some(Box::new(callback));
-        self
-    }
-
     pub fn build(&mut self) -> Result<Dizer, DizerBuilderError> {
         let mut config = Config::default();
 
@@ -163,7 +135,7 @@ impl MirShipyard {
                 .unwrap_or_else(|e| panic!("Invalid logger configuration: {:?}", e));
         }
 
-        info!("Dizer > {:?}", config);
+        info!("{:?}", config);
 
         if config.device_id.is_empty() {
             return Err(DizerBuilderError::NoDeviceId);
@@ -176,7 +148,7 @@ impl MirShipyard {
         Ok(Dizer {
             amqp: Amqp::new(config.mir_addr.clone(), config.thread_count),
             config,
-            desired_prop_callback: Arc::new(self.desired_callback.take().into()),
+            desired_prop_callback: Arc::new(Mutex::new(Vec::new())),
         })
     }
 }
