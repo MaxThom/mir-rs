@@ -19,11 +19,11 @@
 - [] recode with new dizer library
 - [] add device twin support
 
-## Oxi
+## Dizer
 
 - [ ] start
 
-## Dizer
+## Oxi
 
 - [x] create builder pattern for dizer
 - [x] config, logging, cli
@@ -46,6 +46,7 @@
   - [x] move handler to dizer and not shipyard
   - [ ] add future as callback as well of of FnMut
   - [x] add multiple hanldler
+- [ ] caching
 
 
 ## 

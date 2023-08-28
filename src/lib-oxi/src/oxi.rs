@@ -1,4 +1,4 @@
-use crate::error::DizerError;
+use crate::error::OxiError;
 use chrono::Utc;
 use lapin::{
     options::{BasicConsumeOptions, QueueDeclareOptions},
@@ -26,18 +26,18 @@ use y::{
 };
 
 const RMQ_STREAM_EXCHANGE_NAME: &str = "iot-stream";
-const RMQ_STREAM_ROUTING_KEY: &str = "dizer.telemetry.v1";
+const RMQ_STREAM_ROUTING_KEY: &str = "oxi.telemetry.v1";
 
 const RMQ_TWIN_EXCHANGE_NAME: &str = "iot-twin";
-const RMQ_TWIN_HEARTHBEAT_ROUTING_KEY: &str = "dizer.hearthbeat.v1";
-const RMQ_TWIN_DESIRED_PROP_ROUTING_KEY: &str = "dizer.desired.v1";
-const RMQ_TWIN_REPORTED_PROP_ROUTING_KEY: &str = "dizer.reported.v1";
+const RMQ_TWIN_HEARTHBEAT_ROUTING_KEY: &str = "oxi.hearthbeat.v1";
+const RMQ_TWIN_DESIRED_PROP_ROUTING_KEY: &str = "oxi.desired.v1";
+const RMQ_TWIN_REPORTED_PROP_ROUTING_KEY: &str = "oxi.reported.v1";
 //const RMQ_TWIN_DESIRED_QUEUE_NAME: &str = "iot-q-twin-desired";
 //const RMQ_TWIN_REPORTED_QUEUE_NAME: &str = "iot-q-twin-reported";
 
 const HEARTHBEAT_INTERVAL: Duration = Duration::from_secs(60);
 
-pub struct Dizer {
+pub struct Oxi {
     pub config: Config,
     pub amqp: Amqp,
     // TODO: could offer Fn instead of FnMut as well
@@ -45,9 +45,9 @@ pub struct Dizer {
         Arc<Mutex<Vec<Box<dyn FnMut(Option<Properties>, Option<ShortString>) + Send + Sync>>>>,
 }
 
-impl Clone for Dizer {
+impl Clone for Oxi {
     fn clone(&self) -> Self {
-        let mut cloned = Dizer {
+        let mut cloned = Oxi {
             config: self.config.clone(),
             amqp: self.amqp.clone(),
             desired_prop_callback: Arc::new(Mutex::new(Vec::new())),
@@ -59,13 +59,13 @@ impl Clone for Dizer {
     }
 }
 
-impl fmt::Debug for Dizer {
+impl fmt::Debug for Oxi {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let cb = self.desired_prop_callback.lock().unwrap();
         let msg_cb = cb.len();
         //let msg_cb = if let Some(_) = *cb { "Some" } else { "None" };
 
-        f.debug_struct("Dizer")
+        f.debug_struct("Oxi")
             .field("config", &self.config)
             .field("amqp", &self.amqp)
             .field("message_cb", &msg_cb)
@@ -81,14 +81,14 @@ pub struct Config {
     pub thread_count: usize,
 }
 
-impl Dizer {
-    pub async fn join_fleet(&mut self) -> Result<(), DizerError> {
+impl Oxi {
+    pub async fn join_fleet(&mut self) -> Result<(), OxiError> {
         // Create amqp connection pool
         let connect = self
             .amqp
             .get_connection()
             .await
-            .map_err(|_| DizerError::CantConnectToMir)?;
+            .map_err(|_| OxiError::CantConnectToMir)?;
         debug!("{:?}", connect.status());
 
         // Mata + heathbeat
@@ -108,13 +108,13 @@ impl Dizer {
         Ok(())
     }
 
-    pub async fn leave_fleet(&mut self) -> Result<(), DizerError> {
+    pub async fn leave_fleet(&mut self) -> Result<(), OxiError> {
         self.amqp.close();
         info!("{} has left the fleet 🚀.", self.config.device_id);
         Ok(())
     }
 
-    pub async fn send_telemetry(&self, telemetry: Telemetry) -> Result<&str, DizerError> {
+    pub async fn send_telemetry(&self, telemetry: Telemetry) -> Result<&str, OxiError> {
         // Wrap
         let payload = DeviceTelemetryRequest {
             device_id: self.config.device_id.clone(),
@@ -128,7 +128,7 @@ impl Dizer {
     }
 
     // TODO: Offer json serialization, msgpack, others
-    pub async fn send_data_as_type<T>(&self, routing_key: &str, data: T) -> Result<&str, DizerError>
+    pub async fn send_data_as_type<T>(&self, routing_key: &str, data: T) -> Result<&str, OxiError>
     where
         T: Serialize,
     {
@@ -137,7 +137,7 @@ impl Dizer {
         self.send_data(routing_key, &str_data).await
     }
 
-    pub async fn send_data(&self, routing_key: &str, data: &str) -> Result<&str, DizerError> {
+    pub async fn send_data(&self, routing_key: &str, data: &str) -> Result<&str, OxiError> {
         // Serialize & Send
         debug!("{:?}", data);
         match self
@@ -146,7 +146,7 @@ impl Dizer {
             .await
         {
             Ok(x) => Ok(x),
-            Err(_) => Err(DizerError::TelemetrySent), // TODO: Add error type to telemetry sent
+            Err(_) => Err(OxiError::TelemetrySent), // TODO: Add error type to telemetry sent
         }
     }
 
@@ -173,7 +173,7 @@ impl Dizer {
         }
     }
 
-    async fn send_hearthbeat_request(&self) -> Result<&str, DizerError> {
+    async fn send_hearthbeat_request(&self) -> Result<&str, OxiError> {
         let payload = DeviceHeartbeatRequest {
             device_id: self.config.device_id.clone(),
             timestamp: Utc::now().timestamp_nanos(),
@@ -192,14 +192,14 @@ impl Dizer {
             .await
         {
             Ok(x) => Ok(x),
-            Err(_) => Err(DizerError::HeathbeatSent), // TODO: Add error type to telemetry sent
+            Err(_) => Err(OxiError::HeathbeatSent), // TODO: Add error type to telemetry sent
         }
     }
 
     pub async fn send_reported_properties_request(
         &self,
         properties: Properties,
-    ) -> Result<&str, DizerError> {
+    ) -> Result<&str, OxiError> {
         let payload = DeviceReportedRequest {
             device_id: self.config.device_id.clone(),
             timestamp: Utc::now().timestamp_nanos(),
@@ -219,7 +219,7 @@ impl Dizer {
             .await
         {
             Ok(x) => Ok(x),
-            Err(_) => Err(DizerError::ReportedSent),
+            Err(_) => Err(OxiError::ReportedSent),
         }
     }
 
@@ -237,7 +237,7 @@ impl Dizer {
 }
 
 fn setup_consume_message_received(
-    dizer: Dizer,
+    oxi: Oxi,
     desired_prop_callback: Arc<
         Mutex<Vec<Box<dyn FnMut(Option<Properties>, Option<ShortString>) + Send + Sync>>>,
     >,
@@ -245,11 +245,11 @@ fn setup_consume_message_received(
     tokio::spawn(async move {
         info!("started consuming desired properties");
         // TODO: add loop over listen for error restart
-        dizer
+        oxi
             .amqp
             .consume_queue(
                 QueueSettings {
-                    name: dizer.config.device_id.as_str(),
+                    name: oxi.config.device_id.as_str(),
                     options: QueueDeclareOptions {
                         exclusive: true,
                         ..Default::default()
@@ -257,7 +257,7 @@ fn setup_consume_message_received(
                     arguments: FieldTable::default(),
                 },
                 ConsumerSettings {
-                    consumer_tag: dizer.config.device_id.as_str(),
+                    consumer_tag: oxi.config.device_id.as_str(),
                     options: BasicConsumeOptions {
                         ..Default::default()
                     },
@@ -278,7 +278,7 @@ fn setup_consume_message_received(
     });
 }
 
-fn setup_heartbeat_task(dizer: Dizer) {
+fn setup_heartbeat_task(oxi: Oxi) {
     info!("started hearthbeat");
     tokio::spawn(async move {
         let mut interval = time::interval(HEARTHBEAT_INTERVAL);
@@ -286,7 +286,7 @@ fn setup_heartbeat_task(dizer: Dizer) {
         loop {
             interval.tick().await;
             debug!("HEARTHBEAT");
-            if let Err(x) = dizer.send_hearthbeat_request().await {
+            if let Err(x) = oxi.send_hearthbeat_request().await {
                 error!("error sending heartbeat: {}", x);
             }
         }

@@ -22,7 +22,7 @@ tmux select-pane -t 2
 tmux split-window -h -p 75
 
 tmux select-pane -t 1
-tmux send-keys 'make dizer'
+tmux send-keys 'make oxi'
 tmux select-pane -t 2
 tmux send-keys 'make redox'
 tmux select-pane -t 3

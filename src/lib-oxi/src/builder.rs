@@ -12,8 +12,8 @@ use y::{
 };
 
 use crate::{
-    dizer::{Config, Dizer},
-    error::DizerBuilderError,
+    error::OxiBuilderError,
+    oxi::{Config, Oxi},
 };
 
 #[derive(Default, Debug)]
@@ -26,7 +26,7 @@ pub struct MirShipyard {
     cli: Option<ArgMatches>,
 }
 
-const APP_NAME: &str = "dizer";
+const APP_NAME: &str = "oxi";
 
 impl MirShipyard {
     pub fn new() -> Self {
@@ -93,7 +93,7 @@ impl MirShipyard {
         self
     }
 
-    pub fn build(&mut self) -> Result<Dizer, DizerBuilderError> {
+    pub fn build(&mut self) -> Result<Oxi, OxiBuilderError> {
         let mut config = Config::default();
 
         // Default < Builder < Configfile < Cli
@@ -138,14 +138,14 @@ impl MirShipyard {
         info!("{:?}", config);
 
         if config.device_id.is_empty() {
-            return Err(DizerBuilderError::NoDeviceId);
+            return Err(OxiBuilderError::NoDeviceId);
         }
 
         if config.mir_addr.is_empty() {
-            return Err(DizerBuilderError::NoMirServer);
+            return Err(OxiBuilderError::NoMirServer);
         }
 
-        Ok(Dizer {
+        Ok(Oxi {
             amqp: Amqp::new(config.mir_addr.clone(), config.thread_count),
             config,
             desired_prop_callback: Arc::new(Mutex::new(Vec::new())),
