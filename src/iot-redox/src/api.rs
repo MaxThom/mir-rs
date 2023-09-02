@@ -49,7 +49,7 @@ pub async fn get_device_twins(
         })?;
     dbg!(twins);
 
-    Ok(Json(json!({ "result": twins })))
+    Ok(Json(json!(twins)))
 }
 
 pub async fn get_device_twins_properties(

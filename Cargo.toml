@@ -1,6 +1,7 @@
 [workspace]
 
 members = [
+    "src/cli",
     "src/iot-flux",
     "src/iot-swarmer",
     "src/dv-oxi",

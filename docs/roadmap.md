@@ -12,6 +12,7 @@
   - [x] update reported properties of device twin in db
 - [x] read meta messages
   - [x] update device_twin meta section with heartbeat
+- [ ] add support to return many device ids in one call
 
 ## Swarm
 

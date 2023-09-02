@@ -1,6 +1,6 @@
 # Architecture Design Record
 
-## ADR-11, Connection Flow
+## ADR-12, Connection Flow
 
 1. Device Twin get created on the web app.
 
