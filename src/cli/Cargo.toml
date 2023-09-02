@@ -14,3 +14,4 @@ reqwest = { version = "0.11.20", features = ["json"] }
 tokio = { version = "1.27.0", features = ["macros", "time", "rt-multi-thread", "signal"] }
 serde = { version = "1.0.160", features = ["derive"] }
 serde_json = "1.0.96"
+string-builder = "0.2.0"

@@ -1,5 +1,6 @@
 use clap::{Args, Parser, Subcommand};
-use serde_json::Value;
+use serde_json::{json, Value};
+use string_builder::Builder;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -61,7 +62,6 @@ async fn main() -> Result<(), String> {
 
 async fn list_all_devices(url: String, device_ids: Vec<String>) {
     if device_ids.len() == 0 {
-        println!("Listing all devices");
         let devices = match get_devices_data(url, None).await {
             Ok(d) => d,
             Err(e) => {
@@ -69,24 +69,59 @@ async fn list_all_devices(url: String, device_ids: Vec<String>) {
                 return;
             }
         };
-        println!("{}", serde_json::to_string_pretty(&devices).unwrap());
+        print!("{}", stringify_list_tag_prop(devices.clone()));
         return;
     }
 
-    println!("Listing devices {:?}", device_ids);
+    let mut devices = json!([]);
     for device_id in device_ids {
-        let devices = match get_devices_data(url.clone(), Some(device_id.clone())).await {
+        let device = match get_devices_data(url.clone(), Some(device_id.clone())).await {
             Ok(d) => d,
             Err(e) => {
                 println!("Error: {:?}", e);
                 return;
             }
         };
-        println!("{}", serde_json::to_string_pretty(&devices).unwrap());
+
+        if let Some(x) = device.as_array() {
+            if x.len() > 0 {
+                devices.as_array_mut().unwrap().push(x[0].clone());
+            }
+        }
+
+        //print!("{}", stringify_list_tag_prop(devices.clone()));
     }
+    print!("{}", serde_json::to_string_pretty(&devices).unwrap());
+}
+
+fn stringify_list_tag_prop(twins: Value) -> String {
+    let mut builder = Builder::default();
+    twins.as_array().unwrap().iter().for_each(|twin| {
+        builder.append(format!("{}\n", stringify_tag_prop(twin.clone())));
+    });
+
+    let x = builder.string().unwrap();
+    x
+}
+
+fn stringify_tag_prop(twin: Value) -> String {
+    let mut builder = Builder::default();
+    builder.append(format!("{}", twin["id"]));
+    builder.append("  ");
+    builder.append(format!("{}", twin["tag_properties"]));
+
+    let x = builder.string().unwrap();
+    //serde_json::to_string_pretty(&x).unwrap();
+    x
 }
 
 async fn get_devices_data(url: String, device_id: Option<String>) -> Result<Value, reqwest::Error> {
+    if let Some(id) = device_id {
+        let url = format!("http://{}/devicetwins?device_id={}", url, id);
+        let res = reqwest::get(url).await?.json::<Value>().await?;
+        return Ok(res);
+    }
+
     let url = format!("http://{}/devicetwins", url);
     let res = reqwest::get(url).await?.json::<Value>().await?;
 
