@@ -1,6 +1,9 @@
 tmux:
 	./tmux.sh
 
+cli:
+	cargo run --bin mir --
+
 oxi:
 	cargo run --bin dv-oxi -- -c ./configs/local_oxi.yaml
 
