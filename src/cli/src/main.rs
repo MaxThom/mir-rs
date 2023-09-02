@@ -1,6 +1,7 @@
 use clap::{Args, Parser, Subcommand};
 use serde_json::{json, Value};
 use string_builder::Builder;
+use y::utils::cli::get_stdin_from_pipe;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -42,6 +43,7 @@ enum ListCmds {
 
 #[derive(Args)]
 struct DeviceCmd {
+    /// list of devices to print. If empty, print all devices. If . read from stdin.
     device_ids: Vec<String>,
 }
 
@@ -52,7 +54,15 @@ async fn main() -> Result<(), String> {
     match &cli.command {
         MirCmds::List(list_cmd) => match &list_cmd.command {
             ListCmds::Devices(device_cmd) => {
-                list_all_devices(cli.target.clone(), device_cmd.device_ids.clone()).await;
+                let mut ids: Vec<String> = device_cmd.device_ids.clone();
+                if device_cmd.device_ids.len() == 1 && device_cmd.device_ids[0] == "." {
+                    // TODO: find how to make it non blocking if empty
+                    ids = get_stdin_from_pipe()
+                        .split_whitespace()
+                        .map(|s| s.to_string())
+                        .collect();
+                }
+                list_all_devices(cli.target.clone(), ids).await;
             }
         },
     }

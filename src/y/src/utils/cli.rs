@@ -1,4 +1,7 @@
-use std::path::PathBuf;
+use std::{
+    io::{self, Read},
+    path::PathBuf,
+};
 
 use clap::{arg, command, value_parser, ArgMatches};
 
@@ -15,4 +18,10 @@ pub fn setup_cli() -> ArgMatches {
             .value_parser(value_parser!(PathBuf)),
         )
         .get_matches()
+}
+
+pub fn get_stdin_from_pipe() -> String {
+    let mut buffer = "".to_string();
+    let _ = io::stdin().read_to_string(&mut buffer).unwrap();
+    buffer
 }
