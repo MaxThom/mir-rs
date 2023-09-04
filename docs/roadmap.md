@@ -50,7 +50,24 @@
 - [ ] caching
 
 
-## 
+## Cli
+
+- [x] list
+  - [x] devices
+    - [x] all
+    - [x] meta
+    - [x] desired
+    - [x] reported
+- [ ] update
+  - [ ] device
+    - [ ] tag
+    - [ ] desired
+- [ ] create
+  - [ ] device
+- [ ] delete
+  - [ ] device
+
+
 
 ## Cockpit
 

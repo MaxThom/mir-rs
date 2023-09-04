@@ -1,4 +1,5 @@
 # Architecture Design Record
+
 ## ADR-01, RabbitMQ
 
 RabbitMQ will be used to move telemetry around.

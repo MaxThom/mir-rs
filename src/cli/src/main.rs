@@ -45,6 +45,15 @@ enum ListCmds {
 struct DeviceCmd {
     /// list of devices to print. If empty, print all devices. If . read from stdin.
     device_ids: Vec<String>,
+
+    #[arg(short, long)]
+    meta: bool,
+    #[arg(short, long)]
+    tag: bool,
+    #[arg(short, long)]
+    desired: bool,
+    #[arg(short, long)]
+    reported: bool,
 }
 
 #[tokio::main]
@@ -62,7 +71,15 @@ async fn main() -> Result<(), String> {
                         .map(|s| s.to_string())
                         .collect();
                 }
-                list_all_devices(cli.target.clone(), ids).await;
+                list_all_devices(
+                    cli.target.clone(),
+                    ids,
+                    device_cmd.meta,
+                    device_cmd.tag,
+                    device_cmd.desired,
+                    device_cmd.reported,
+                )
+                .await;
             }
         },
     }
@@ -70,7 +87,14 @@ async fn main() -> Result<(), String> {
     Ok(())
 }
 
-async fn list_all_devices(url: String, device_ids: Vec<String>) {
+async fn list_all_devices(
+    url: String,
+    device_ids: Vec<String>,
+    meta: bool,
+    tag: bool,
+    desired: bool,
+    reported: bool,
+) {
     if device_ids.len() == 0 {
         let devices = match get_devices_data(url, None).await {
             Ok(d) => d,
@@ -94,7 +118,20 @@ async fn list_all_devices(url: String, device_ids: Vec<String>) {
         };
 
         if let Some(x) = device.as_array() {
+            let mut x = x.clone();
             if x.len() > 0 {
+                if !meta {
+                    x[0].as_object_mut().unwrap().remove("meta_properties");
+                }
+                if !tag {
+                    x[0].as_object_mut().unwrap().remove("tag_properties");
+                }
+                if !desired {
+                    x[0].as_object_mut().unwrap().remove("desired_properties");
+                }
+                if !reported {
+                    x[0].as_object_mut().unwrap().remove("reported_properties");
+                }
                 devices.as_array_mut().unwrap().push(x[0].clone());
             }
         }
