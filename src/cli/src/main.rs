@@ -1,7 +1,8 @@
 use clap::{Parser, Subcommand};
+use create::CreateCmd;
 use list::ListCmd;
-use y::utils::cli::get_stdin_from_pipe;
 
+pub mod create;
 pub mod list;
 
 #[derive(Parser)]
@@ -28,6 +29,8 @@ struct Cli {
 enum MirCmds {
     /// list devices
     List(ListCmd),
+    /// create device
+    Create(CreateCmd),
 }
 
 #[tokio::main]
@@ -35,8 +38,13 @@ async fn main() -> Result<(), String> {
     let cli = Cli::parse();
 
     match &cli.command {
-        MirCmds::List(list_cmd) => {
-            return list::run_list_cmd(list_cmd, cli.target).await;
+        MirCmds::List(cmd) => {
+            // TODO: better stdin from json
+            return list::run_list_cmd(cmd, cli.target).await;
+        }
+        MirCmds::Create(cmd) => {
+            // TODO: better stdin from json
+            return create::run_create_cmd(cmd, cli.target).await;
         }
     }
 }

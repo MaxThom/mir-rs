@@ -5,10 +5,10 @@ use axum::{
     http::StatusCode,
     Json,
 };
-use log::{debug, error, info};
+use log::{debug, error, info, warn};
 use serde_json::{json, Value};
 use surrealdb::{engine::remote::ws::Client, Surreal};
-use x::device_twin::{MetaProperties, NewDevice, Properties, Record, TargetProperties};
+use x::device_twin::{MetaProperties, NewDeviceReq, Properties, Record, TargetProperties};
 use y::clients::amqp::Amqp;
 
 use crate::twin_service::*;
@@ -162,24 +162,31 @@ pub async fn update_device_twins_properties(
 
 pub async fn create_device_twins(
     State(state): State<Arc<ApiState>>,
-    Json(payload): Json<NewDevice>,
+    Json(payload): Json<NewDeviceReq>,
 ) -> Result<Json<Value>, StatusCode> {
     debug!("create_device_twin");
     dbg!(&payload);
 
-    let created = create_device_twins_in_db(state.db.clone(), payload)
-        .await
-        .map_err(|error| {
-            error!("Error: {}", error.to_string());
-            StatusCode::INTERNAL_SERVER_ERROR.as_str()
-        });
+    let created = create_device_twins_in_db(state.db.clone(), payload).await;
 
     if let Err(error) = created {
-        return Ok(Json(json!({ "result": error })));
+        warn!("{}", json!(error.to_string()));
+        return Ok(Json(json!(error.to_string())));
     }
 
     dbg!(&created);
-    Ok(Json(json!({ "result": created })))
+    //Ok(Json(json!({ "result": created })))
+    //
+
+    //let v: Value = match created {
+    //    Ok(x) => match x {
+    //        Some(y) => json!(y),
+    //        None => json!({}),
+    //    },
+    //    Err(e) => json!(e),
+    //};
+
+    Ok(Json(json!(created.unwrap())))
 }
 
 pub async fn delete_device_twins(

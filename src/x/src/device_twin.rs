@@ -1,3 +1,4 @@
+use clap::ValueEnum;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use surrealdb::sql::Thing;
@@ -51,7 +52,8 @@ pub struct Record {
     id: Thing,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+#[derive(Debug, Serialize, Deserialize, Clone, Default, ValueEnum)]
+//#[value(VALUE, ENUM, ATTRIBUTE)]
 pub enum Status {
     #[default]
     Disabled,
@@ -102,7 +104,7 @@ pub struct Properties {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
-pub struct NewDevice {
+pub struct NewDeviceReq {
     pub device_id: String,
     pub model_id: String,
     pub status: Status,

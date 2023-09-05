@@ -18,6 +18,14 @@ mir/
 │  ├─ device
 ├─ delete/          // must specify a device id
 │  ├─ device
+├─ stream/          // stream data. add filter based on queue type.
+│  ├─ telemetry
+├─ listen/          // listen to all queue at the same time. add filter based on queue type.
+│  ├─ hearthbeat/
+│  ├─ desired/
+│  ├─ reported/
+│  ├─ telemetry/
+│  ├─ .../
 ```
 
 ### Derive vs Builder

@@ -4,21 +4,21 @@ use string_builder::Builder;
 use y::utils::cli::get_stdin_from_pipe;
 
 #[derive(Args)]
-pub struct DeviceCmd {
+pub struct DevicesCmd {
     /// list of devices to print. If empty, print all devices. If . read from stdin.
     device_ids: Vec<String>,
 
-    #[arg(short, long)]
+    #[arg(long)]
     meta: bool,
-    #[arg(short, long)]
+    #[arg(long)]
     tag: bool,
-    #[arg(short, long)]
+    #[arg(long)]
     desired: bool,
-    #[arg(short, long)]
+    #[arg(long)]
     reported: bool,
 }
 
-pub async fn run_device_cmd(device_cmd: &DeviceCmd, target: String) -> Result<(), String> {
+pub async fn run_devices_cmd(device_cmd: &DevicesCmd, target: String) -> Result<(), String> {
     let mut ids: Vec<String> = device_cmd.device_ids.clone();
     if device_cmd.device_ids.len() == 1 && device_cmd.device_ids[0] == "." {
         // TODO: find how to make it non blocking if empty
@@ -76,19 +76,29 @@ async fn list_all_devices(
         if let Some(x) = device.as_array() {
             let mut x = x.clone();
             if x.len() > 0 {
-                if !meta {
-                    x[0].as_object_mut().unwrap().remove("meta_properties");
+                let twin = if let Some(x) = x[0].as_object_mut() {
+                    x
+                } else {
+                    println!("Error: {:?}", device);
+                    return;
+                };
+                // If all false, we show everything
+                if meta || tag || desired || reported {
+                    if !meta {
+                        twin.remove("meta_properties");
+                    }
+                    if !tag {
+                        twin.remove("tag_properties");
+                    }
+                    if !desired {
+                        twin.remove("desired_properties");
+                    }
+                    if !reported {
+                        twin.remove("reported_properties");
+                    }
                 }
-                if !tag {
-                    x[0].as_object_mut().unwrap().remove("tag_properties");
-                }
-                if !desired {
-                    x[0].as_object_mut().unwrap().remove("desired_properties");
-                }
-                if !reported {
-                    x[0].as_object_mut().unwrap().remove("reported_properties");
-                }
-                devices.as_array_mut().unwrap().push(x[0].clone());
+                let v: Value = serde_json::value::to_value(twin).unwrap();
+                devices.as_array_mut().unwrap().push(v);
             }
         }
 

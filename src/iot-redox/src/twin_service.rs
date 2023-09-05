@@ -8,7 +8,7 @@ use surrealdb::sql::Thing;
 use surrealdb::{engine::remote::ws::Client, opt::PatchOp, Surreal};
 use thiserror::Error as ThisError;
 use x::device_twin::DeviceTwin;
-use x::device_twin::NewDevice;
+use x::device_twin::NewDeviceReq;
 use x::device_twin::{ConnectionState, MetaProperties, Properties, StatusReason, TargetProperties};
 
 const DEVICE_ID_KEY: &str = "device_id";
@@ -56,7 +56,7 @@ pub async fn get_device_twins_with_id_from_db(
 
 pub async fn create_device_twins_in_db(
     db: Surreal<Client>,
-    payload: NewDevice,
+    payload: NewDeviceReq,
 ) -> Result<Option<DeviceTwin>, TwinServiceError> {
     //let device_id: String = generate_threadsafe_random_string();
 
