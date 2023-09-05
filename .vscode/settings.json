@@ -10,7 +10,9 @@
         "./src/iot-redox/Cargo.toml",
         "./src/y/Cargo.toml",
         "./src/lib-dizer/Cargo.toml",
-        "./src/lib-oxi/Cargo.toml"
+        "./src/lib-oxi/Cargo.toml",
+        "./src/cli/Cargo.toml",
+        "./src/cli/Cargo.toml"
     ],
     "editor.inlayHints.enabled": "offUnlessPressed"    
 }
