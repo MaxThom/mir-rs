@@ -27,11 +27,6 @@ pub async fn run_devices_cmd(device_cmd: &DevicesCmd, target: String) -> Result<
         // The second is a timer that finish of .200ms (to be refined), to make sure we don't wait for ever.
 
         ids = serde_json::from_str(get_stdin_from_pipe().as_str()).unwrap();
-
-        //ids = get_stdin_from_pipe()
-        //    .split_whitespace()
-        //    .map(|s| s.to_string())
-        //    .collect();
     }
     list_all_devices(
         target,
