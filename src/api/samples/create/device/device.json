@@ -1,5 +1,10 @@
-{
-    "device_id": "0x993wf===",
+[{
+    "device_id": "0x997wf===",
     "model_id": "6047",
     "status": "Enabled"
-}
+},
+{
+    "device_id": "0x998wf===",
+    "model_id": "6047",
+    "status": "Enabled"
+}]

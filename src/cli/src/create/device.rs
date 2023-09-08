@@ -10,9 +10,9 @@ pub struct DeviceCmd {
     device_ids: Vec<String>,
 
     #[arg(short, long, value_enum)]
-    status: Status,
+    status: Option<Status>,
     #[arg(short, long)]
-    model_id: String,
+    model_id: Option<String>,
 
     #[arg(long)]
     meta: bool,
@@ -25,27 +25,37 @@ pub struct DeviceCmd {
 }
 
 pub async fn run_device_cmd(device_cmd: &DeviceCmd, target: String) -> Result<(), String> {
-    let mut ids: Vec<String> = device_cmd.device_ids.clone();
+    let mut device_req: Vec<NewDeviceReq> = Vec::new();
     if device_cmd.device_ids.len() == 1 && device_cmd.device_ids[0] == "." {
         // TODO: do it
-        ids = get_stdin_from_pipe()
-            .split_whitespace()
-            .map(|s| s.to_string())
-            .collect();
+        device_req = serde_json::from_str(get_stdin_from_pipe().as_str())
+            .map_err(|e| format!("Error: {:?}", e))?;
+    } else {
+        let model_id = if let Some(x) = device_cmd.model_id.clone() {
+            x
+        } else {
+            return Err(format!("flag 'model_id' is mandatory"));
+        };
+        let status = if let Some(x) = device_cmd.status.clone() {
+            x
+        } else {
+            return Err(format!("flag 'status' is mandatory"));
+        };
+
+        for device_id in device_cmd.device_ids.clone() {
+            device_req.push(NewDeviceReq {
+                device_id,
+                model_id: model_id.clone(),
+                status: status.clone(),
+            });
+        }
     }
 
     let mut devices = json!([]);
-    for device_id in ids {
-        let mut device = create_device_request(
-            target.clone(),
-            NewDeviceReq {
-                device_id,
-                model_id: device_cmd.model_id.clone(),
-                status: device_cmd.status.clone(),
-            },
-        )
-        .await
-        .map_err(|e| format!("Error: {:?}", e))?;
+    for req in device_req {
+        let mut device = create_device_request(target.clone(), req)
+            .await
+            .map_err(|e| format!("Error: {:?}", e))?;
 
         let twin = if let Some(x) = device.as_object_mut() {
             x
