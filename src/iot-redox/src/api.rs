@@ -126,7 +126,7 @@ pub async fn update_device_twins_properties(
     )
     .await;
 
-    let twin = if let Err(e) = updated_twin_result {
+    let twin = if let Err(_) = updated_twin_result {
         //return Ok(Json(json!({ "result": 200 })));
         // TODO: proper return when surrealdb is fixed
         None

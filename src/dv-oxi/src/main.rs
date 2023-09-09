@@ -43,7 +43,7 @@ async fn main() -> Result<(), String> {
     let oxi_builder = MirShipyard::new()
         .with_cli()
         .with_config_file("")
-        .with_device_id("012xwf===")
+        .with_device_id("0x992wf===")
         .with_mir_server("")
         .with_thread_count(7)
         .with_logger("info")

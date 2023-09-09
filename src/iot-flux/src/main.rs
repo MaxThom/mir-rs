@@ -61,6 +61,7 @@ async fn main() {
         let mut sender = SenderBuilder::new(host_port.0.clone(), host_port.1.clone())
             .connect()
             .unwrap();
+
         tokio::spawn(async move {
             tokio::select! {
                 _ = cloned_token.cancelled() => {

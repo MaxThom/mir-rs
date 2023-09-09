@@ -25,4 +25,4 @@ rabbit:
 
 db:
 	docker stop surrealdb || true
-	docker run --rm --pull always --name surrealdb -p 80:8000 -v ./surrealdb:/opt/surrealdb/ surrealdb/surrealdb:1.0.0-beta.9-20230402 start --log info --user root --pass root file:/opt/surrealdb/iot.db
+	docker run --rm --pull always --name surrealdb -p 80:8000 -v ./surrealdb:/opt/surrealdb/ surrealdb/surrealdb:1.0.0-beta.11 start --log info --user root --pass root file:/opt/surrealdb/iot.db
