@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use surrealdb::sql::Thing;
 
-#[derive(Debug, Serialize, Deserialize, Clone, Default, Eq, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, Clone, Default, Eq, PartialEq, ValueEnum)]
 #[serde(rename_all = "lowercase")]
 pub enum TargetProperties {
     #[default]
@@ -53,7 +53,6 @@ pub struct Record {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default, ValueEnum)]
-//#[value(VALUE, ENUM, ATTRIBUTE)]
 pub enum Status {
     #[default]
     Disabled,

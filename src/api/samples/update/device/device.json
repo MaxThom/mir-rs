@@ -1,0 +1,8 @@
+{
+    "properties": {
+        "battery_level": "low",
+        "is_capacity_full": false,
+        "state": "Idle"
+    },
+    "version": 1
+}

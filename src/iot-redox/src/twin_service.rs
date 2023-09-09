@@ -147,7 +147,6 @@ pub async fn delete_device_twins_in_db(
 ) -> Result<Option<DeviceTwin>, TwinServiceError> {
     let deleted: Option<DeviceTwin> = db.delete(("device_twin", device_id)).await?;
 
-    dbg!(&deleted);
     Ok(deleted)
 }
 

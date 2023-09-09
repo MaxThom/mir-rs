@@ -124,13 +124,9 @@ pub async fn update_device_twins_properties(
         &target,
         &payload,
     )
-    .await
-    .map_err(|error| {
-        error!("Error: {}", error);
-        StatusCode::INTERNAL_SERVER_ERROR
-    });
+    .await;
 
-    let _ = if let Err(_) = updated_twin_result {
+    let twin = if let Err(e) = updated_twin_result {
         //return Ok(Json(json!({ "result": 200 })));
         // TODO: proper return when surrealdb is fixed
         None
@@ -157,7 +153,7 @@ pub async fn update_device_twins_properties(
         };
     }
 
-    Ok(Json(json!({ "result": payload })))
+    Ok(Json(json!(twin)))
 }
 
 pub async fn create_device_twins(
@@ -198,15 +194,13 @@ pub async fn delete_device_twins(
     if params.contains_key(DEVICE_ID_KEY) {
         device_id = params[DEVICE_ID_KEY].clone();
     }
-    dbg!(&device_id);
 
-    let twins = &delete_device_twins_in_db(state.db.clone(), device_id.as_str())
-        .await
-        .map_err(|error| {
-            error!("Error: {}", error);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    let twins = &delete_device_twins_in_db(state.db.clone(), device_id.as_str()).await;
+    if let Err(error) = twins {
+        warn!("{}", json!(error.to_string()));
+        return Ok(Json(json!(error.to_string())));
+    }
+    let x = twins.as_ref().unwrap();
 
-    dbg!(&twins);
-    Ok(Json(json!({ "result": &twins })))
+    Ok(Json(json!(x)))
 }

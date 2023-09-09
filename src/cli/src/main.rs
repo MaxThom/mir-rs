@@ -2,10 +2,12 @@ use clap::{Parser, Subcommand};
 use create::CreateCmd;
 use delete::DeleteCmd;
 use list::ListCmd;
+use update::UpdateCmd;
 
 pub mod create;
 pub mod delete;
 pub mod list;
+pub mod update;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -33,6 +35,8 @@ enum MirCmds {
     List(ListCmd),
     /// create device
     Create(CreateCmd),
+    /// update device
+    Update(UpdateCmd),
     /// delete device
     Delete(DeleteCmd),
 }
@@ -49,6 +53,10 @@ async fn main() -> Result<(), String> {
         MirCmds::Create(cmd) => {
             // TODO: better stdin from json
             return create::run_create_cmd(cmd, cli.target).await;
+        }
+        MirCmds::Update(cmd) => {
+            // TODO: better stdin from json
+            return update::run_update_cmd(cmd, cli.target).await;
         }
         MirCmds::Delete(cmd) => {
             // TODO: better stdin from json
