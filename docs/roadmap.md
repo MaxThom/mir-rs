@@ -58,14 +58,14 @@
     - [x] meta
     - [x] desired
     - [x] reported
-- [ ] update
-  - [ ] device
-    - [ ] tag
-    - [ ] desired
-- [ ] create
-  - [ ] device
-- [ ] delete
-  - [ ] device
+- [x] update
+  - [x] device
+    - [x] tag
+    - [x] desired
+- [x] create
+  - [x] device
+- [x] delete
+  - [x] device
 
 
 
