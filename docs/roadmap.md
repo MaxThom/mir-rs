@@ -66,6 +66,10 @@
   - [x] device
 - [x] delete
   - [x] device
+- [ ] listen/          // listen to all queue at the same time. add filter based on queue type.
+  - [ ] hearthbeat
+  - [ ] device
+  - [ ] reported
 
 
 
