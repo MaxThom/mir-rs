@@ -1,6 +1,5 @@
 use serde::Deserialize;
 use std::{collections::HashMap, fmt};
-use thiserror::Error as ThisError;
 use y::utils::telemetry::{get_telemetry_generator_factory, Error, TelemetryGeneratorType};
 
 #[derive(Debug, Deserialize, Clone)]

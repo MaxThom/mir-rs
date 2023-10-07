@@ -137,6 +137,7 @@ impl Oxi {
         self.send_data(routing_key, &str_data).await
     }
 
+    // TODO Add [u8] fn instead of str
     pub async fn send_data(&self, routing_key: &str, data: &str) -> Result<&str, OxiError> {
         // Serialize & Send
         debug!("{:?}", data);
@@ -279,13 +280,13 @@ fn setup_consume_message_received(
 }
 
 fn setup_heartbeat_task(oxi: Oxi) {
-    info!("started hearthbeat");
+    info!("started heartbeat");
     tokio::spawn(async move {
         let mut interval = time::interval(HEARTHBEAT_INTERVAL);
 
         loop {
             interval.tick().await;
-            debug!("HEARTHBEAT");
+            debug!("hearthbeat");
             if let Err(x) = oxi.send_hearthbeat_request().await {
                 error!("error sending heartbeat: {}", x);
             }

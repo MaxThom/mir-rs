@@ -121,7 +121,7 @@ async fn main() -> Result<(), Error> {
         let cloned_token = token.clone();
         let cloned_amqp = amqp.clone();
         let cloned_db = db.clone();
-        //let mut sender = SenderBuilder::new(host_port.0.clone(), host_port.1.clone()).connect().unwrap();
+        
         tokio::spawn(async move {
             tokio::select! {
                 _ = cloned_token.cancelled() => {
@@ -139,7 +139,6 @@ async fn main() -> Result<(), Error> {
         let cloned_token = token.clone();
         let cloned_amqp = amqp.clone();
         let cloned_db = db.clone();
-        //let mut sender = SenderBuilder::new(host_port.0.clone(), host_port.1.clone()).connect().unwrap();
         tokio::spawn(async move {
             tokio::select! {
                 _ = cloned_token.cancelled() => {
@@ -157,7 +156,6 @@ async fn main() -> Result<(), Error> {
         let cloned_token = token.clone();
         let cloned_amqp = amqp.clone();
         let cloned_db = db.clone();
-        //let mut sender = SenderBuilder::new(host_port.0.clone(), host_port.1.clone()).connect().unwrap();
         tokio::spawn(async move {
             tokio::select! {
                 _ = cloned_token.cancelled() => {
