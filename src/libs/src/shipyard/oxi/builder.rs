@@ -5,16 +5,20 @@ use std::{
 };
 
 use clap::ArgMatches;
-use log::info;
-use y::{
-    clients::amqp::Amqp,
+
+use crate::clients::amqp::Amqp;
+use crate::shipyard::oxi::error::OxiBuilderError;
+use crate::shipyard::oxi::oxi::Config;
+use crate::{
+    shipyard::oxi::oxi::Oxi,
     utils::{config::FileFormat, setup_cli, setup_config, setup_logger},
 };
+use log::info;
 
-use crate::{
-    error::OxiBuilderError,
-    oxi::{Config, Oxi},
-};
+//use crate::{
+//   error::OxiBuilderError,
+//    oxi::{Config, Oxi},
+//};
 
 #[derive(Default, Debug)]
 pub struct MirShipyard {
@@ -115,7 +119,7 @@ impl MirShipyard {
 
         // Cli matches
         if let Some(x) = &self.cli {
-            let y = x.get_one::<PathBuf>(y::utils::cli::CONFIG_KEY);
+            let y = x.get_one::<PathBuf>(crate::utils::cli::CONFIG_KEY);
             if let Some(z) = y {
                 self.config_file_path = Some(z.clone());
             }

@@ -1,6 +1,6 @@
 use std::{error, fmt};
 
-use y::clients::amqp::AmqpError;
+use crate::clients::amqp::AmqpError;
 
 #[derive(Debug)]
 pub enum OxiBuilderError {

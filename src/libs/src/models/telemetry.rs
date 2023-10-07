@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::device_twin::Properties;
+use crate::models::device_twin::Properties;
 
 // TODO: Payload is a Generic so user can send whatever
 //       And they should not care about metadata of the payload
