@@ -10,13 +10,13 @@ use thiserror::Error as ThisError;
 use tokio::time::{sleep, Duration};
 use tokio_util::sync::CancellationToken;
 
-use x::telemetry::DeviceTelemetryRequest;
-use y::clients::amqp::Amqp;
-use y::utils::config::{setup_config, FileFormat};
-use y::utils::logger::setup_logger;
+use libs::clients::amqp::Amqp;
+use libs::models::telemetry::DeviceTelemetryRequest;
+use libs::utils::config::{setup_config, FileFormat};
+use libs::utils::logger::setup_logger;
 
 use device::LiveDevice;
-use y::utils::setup_cli;
+use libs::utils::setup_cli;
 
 mod device;
 
@@ -45,7 +45,7 @@ async fn main() {
     let settings: Settings = setup_config(
         APP_NAME,
         FileFormat::YAML,
-        matches.get_one::<PathBuf>(y::utils::cli::CONFIG_KEY),
+        matches.get_one::<PathBuf>(libs::utils::cli::CONFIG_KEY),
     )
     .unwrap();
     setup_logger(settings.log_level.clone()).unwrap();

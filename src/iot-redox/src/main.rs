@@ -16,16 +16,18 @@ use log::{debug, error, info, trace};
 use thiserror::Error as ThisError;
 use tokio_util::sync::CancellationToken;
 
-use x::device_twin::TargetProperties;
-use x::telemetry::{DeviceDesiredRequest, DeviceHeartbeatRequest, DeviceReportedRequest};
-use y::clients::amqp::{
+use libs::clients::amqp::{
     Amqp, AmqpSettings, ChannelSettings, ConsumerSettings, ExchangeSettings, QueueBindSettings,
     QueueSettings,
 };
-use y::utils::cli::setup_cli;
-use y::utils::config::{setup_config, FileFormat};
-use y::utils::logger::setup_logger;
-use y::utils::serialization::SerializationKind;
+use libs::models::device_twin::TargetProperties;
+use libs::models::telemetry::{
+    DeviceDesiredRequest, DeviceHeartbeatRequest, DeviceReportedRequest,
+};
+use libs::utils::cli::setup_cli;
+use libs::utils::config::{setup_config, FileFormat};
+use libs::utils::logger::setup_logger;
+use libs::utils::serialization::SerializationKind;
 
 #[derive(ThisError, Debug)]
 enum Error {
@@ -89,7 +91,7 @@ async fn main() -> Result<(), Error> {
     let settings: Settings = setup_config(
         APP_NAME,
         FileFormat::YAML,
-        matches.get_one::<PathBuf>(y::utils::cli::CONFIG_KEY),
+        matches.get_one::<PathBuf>(libs::utils::cli::CONFIG_KEY),
     )
     .unwrap();
     setup_logger(settings.log_level.clone()).unwrap();
@@ -121,7 +123,7 @@ async fn main() -> Result<(), Error> {
         let cloned_token = token.clone();
         let cloned_amqp = amqp.clone();
         let cloned_db = db.clone();
-        //let mut sender = SenderBuilder::new(host_port.0.clone(), host_port.1.clone()).connect().unwrap();
+
         tokio::spawn(async move {
             tokio::select! {
                 _ = cloned_token.cancelled() => {
@@ -139,7 +141,6 @@ async fn main() -> Result<(), Error> {
         let cloned_token = token.clone();
         let cloned_amqp = amqp.clone();
         let cloned_db = db.clone();
-        //let mut sender = SenderBuilder::new(host_port.0.clone(), host_port.1.clone()).connect().unwrap();
         tokio::spawn(async move {
             tokio::select! {
                 _ = cloned_token.cancelled() => {
@@ -157,7 +158,6 @@ async fn main() -> Result<(), Error> {
         let cloned_token = token.clone();
         let cloned_amqp = amqp.clone();
         let cloned_db = db.clone();
-        //let mut sender = SenderBuilder::new(host_port.0.clone(), host_port.1.clone()).connect().unwrap();
         tokio::spawn(async move {
             tokio::select! {
                 _ = cloned_token.cancelled() => {

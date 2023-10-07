@@ -1,13 +1,13 @@
+
 [workspace]
+resolver = "2"
 
 members = [
-    "src/cli",
-    "src/iot-flux",
-    "src/iot-swarmer",
-    "src/dv-oxi",
-    "src/dv-dizer",
-    "src/lib-oxi",
-    "src/lib-dizer",
-    "src/iot-redox",
-    "src/y",
+  "src/cli",
+  "src/iot-flux",
+  "src/iot-swarmer",
+  "src/dv-oxi",
+  "src/dv-dizer",
+  "src/iot-redox",
+  "src/libs",
 ]

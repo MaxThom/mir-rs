@@ -1,13 +1,14 @@
 use lapin::types::ShortString;
+use libs::models::device_twin::Properties;
+use libs::models::telemetry::Telemetry;
+use libs::shipyard::oxi::{builder::MirShipyard, oxi::Oxi};
+use libs::utils::telemetry::{PyramidTelemetryGenerator, TelemetryGenerator};
 use log::{debug, error, info};
-use oxi::{builder::MirShipyard, oxi::Oxi};
 use serde_json::json;
 use thiserror::Error as ThisError;
 use tokio::time::{sleep, Duration};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
-use x::{device_twin::Properties, telemetry::Telemetry};
-use y::utils::telemetry::{PyramidTelemetryGenerator, TelemetryGenerator};
 
 #[derive(ThisError, Debug)]
 enum Error {}

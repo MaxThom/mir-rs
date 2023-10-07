@@ -8,8 +8,8 @@ use axum::{
 use log::{debug, error, info, warn};
 use serde_json::{json, Value};
 use surrealdb::{engine::remote::ws::Client, Surreal};
-use x::device_twin::{MetaProperties, NewDeviceReq, Properties, Record, TargetProperties};
-use y::clients::amqp::Amqp;
+use libs::models::device_twin::{MetaProperties, NewDeviceReq, Properties, Record, TargetProperties};
+use libs::clients::amqp::Amqp;
 
 use crate::twin_service::*;
 

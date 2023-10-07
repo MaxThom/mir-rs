@@ -1,6 +1,7 @@
 use futures::StreamExt;
 use lapin::types::ShortString;
 use lapin::{options::*, types::FieldTable};
+use libs::utils::setup_cli;
 use log::{debug, error, info, trace};
 use questdb::ingress::{Buffer, Sender, SenderBuilder, TimestampNanos};
 use serde::Deserialize;
@@ -8,13 +9,12 @@ use std::num::ParseIntError;
 use std::path::PathBuf;
 use thiserror::Error as ThisError;
 use tokio_util::sync::CancellationToken;
-use y::utils::setup_cli;
 
-use x::telemetry::DeviceTelemetryRequest;
-use y::clients::amqp::Amqp;
-use y::utils::config::{setup_config, FileFormat};
-use y::utils::logger::setup_logger;
-use y::utils::network;
+use libs::clients::amqp::Amqp;
+use libs::models::telemetry::DeviceTelemetryRequest;
+use libs::utils::config::{setup_config, FileFormat};
+use libs::utils::logger::setup_logger;
+use libs::utils::network;
 
 #[derive(ThisError, Debug)]
 enum Error {
@@ -46,7 +46,7 @@ async fn main() {
     let settings: Settings = setup_config(
         APP_NAME,
         FileFormat::YAML,
-        matches.get_one::<PathBuf>(y::utils::cli::CONFIG_KEY),
+        matches.get_one::<PathBuf>(libs::utils::cli::CONFIG_KEY),
     )
     .unwrap();
     setup_logger(settings.log_level.clone()).unwrap();

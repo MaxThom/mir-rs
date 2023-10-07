@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 
 pub mod clients;
+pub mod models;
+pub mod shipyard;
 pub mod utils;
 
 #[derive(Serialize, Deserialize, Debug)]

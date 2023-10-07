@@ -1,8 +1,21 @@
-use crate::error::OxiError;
+//use crate::error::OxiError;
+use crate::shipyard::oxi::error::OxiError;
 use chrono::Utc;
 use lapin::{
     options::{BasicConsumeOptions, QueueDeclareOptions},
     types::{FieldTable, ShortString},
+};
+
+use crate::models::{
+    device_twin::Properties,
+    telemetry::{
+        DeviceDesiredRequest, DeviceHeartbeatRequest, DeviceReportedRequest,
+        DeviceTelemetryRequest, Telemetry,
+    },
+};
+use crate::{
+    clients::amqp::{Amqp, AmqpError, ConsumerSettings, QueueSettings},
+    utils::serialization::SerializationKind,
 };
 use log::{debug, error, info};
 use serde::{Deserialize, Serialize};
@@ -13,17 +26,6 @@ use std::{
 };
 use std::{option::Option, sync::Mutex};
 use tokio::time;
-use x::{
-    device_twin::Properties,
-    telemetry::{
-        DeviceDesiredRequest, DeviceHeartbeatRequest, DeviceReportedRequest,
-        DeviceTelemetryRequest, Telemetry,
-    },
-};
-use y::{
-    clients::amqp::{Amqp, AmqpError, ConsumerSettings, QueueSettings},
-    utils::serialization::SerializationKind,
-};
 
 const RMQ_STREAM_EXCHANGE_NAME: &str = "iot-stream";
 const RMQ_STREAM_ROUTING_KEY: &str = "oxi.telemetry.v1";
@@ -137,6 +139,7 @@ impl Oxi {
         self.send_data(routing_key, &str_data).await
     }
 
+    // TODO Add [u8] fn instead of str
     pub async fn send_data(&self, routing_key: &str, data: &str) -> Result<&str, OxiError> {
         // Serialize & Send
         debug!("{:?}", data);
@@ -245,8 +248,7 @@ fn setup_consume_message_received(
     tokio::spawn(async move {
         info!("started consuming desired properties");
         // TODO: add loop over listen for error restart
-        oxi
-            .amqp
+        oxi.amqp
             .consume_queue(
                 QueueSettings {
                     name: oxi.config.device_id.as_str(),
@@ -279,13 +281,13 @@ fn setup_consume_message_received(
 }
 
 fn setup_heartbeat_task(oxi: Oxi) {
-    info!("started hearthbeat");
+    info!("started heartbeat");
     tokio::spawn(async move {
         let mut interval = time::interval(HEARTHBEAT_INTERVAL);
 
         loop {
             interval.tick().await;
-            debug!("HEARTHBEAT");
+            debug!("hearthbeat");
             if let Err(x) = oxi.send_hearthbeat_request().await {
                 error!("error sending heartbeat: {}", x);
             }
