@@ -10,4 +10,5 @@ members = [
   "src/dv-dizer",
   "src/iot-redox",
   "src/libs",
+  "src/ui",
 ]
