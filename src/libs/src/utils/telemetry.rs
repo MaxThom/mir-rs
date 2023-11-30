@@ -84,9 +84,7 @@ impl TelemetryGenerator for WaveTelemetryGenerator {
 impl TelemetryGenerator for PyramidTelemetryGenerator {
     fn next_datapoint(&mut self) -> f64 {
         let value = self.previous_value + self.rate;
-        if value >= self.max {
-            self.rate *= -1.0;
-        } else if value <= self.min {
+        if value <= self.min || value >= self.max {
             self.rate *= -1.0;
         }
         self.previous_value = value;
@@ -101,9 +99,7 @@ impl TelemetryGenerator for PyramidTelemetryGenerator {
 impl TelemetryGenerator for RealTelemetryGenerator {
     fn next_datapoint(&mut self) -> f64 {
         let value = self.previous_value + self.rate;
-        if value > self.max {
-            self.rate *= -1.0;
-        } else if value < self.min {
+        if value < self.min || value > self.max {
             self.rate *= -1.0;
         }
         self.previous_value = value;

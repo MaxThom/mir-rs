@@ -1,8 +1,8 @@
 use clap::Args;
+use libs::models::device_twin::{Properties, TargetProperties};
+use libs::utils::cli::get_stdin_from_pipe;
 use reqwest::Client;
 use serde_json::{json, Value};
-use x::device_twin::{Properties, TargetProperties};
-use y::utils::cli::get_stdin_from_pipe;
 
 #[derive(Args)]
 pub struct DeviceCmd {

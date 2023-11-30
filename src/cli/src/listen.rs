@@ -1,5 +1,5 @@
 use clap::Args;
-use y::{clients::amqp::Amqp, utils::cli::get_stdin_from_pipe};
+use libs::{clients::amqp::Amqp, utils::cli::get_stdin_from_pipe};
 
 //const RMQ_TWIN_EXCHANGE_NAME: &str = "iot-twin";
 //const RMQ_TWIN_HEARTHBEAT_QUEUE_NAME: &str = "iot-q-hearthbeat";

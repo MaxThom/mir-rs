@@ -19,6 +19,10 @@ redox:
 swarmer:
 	cargo run --bin iot-swarmer -- -c ./configs/local_swarmer.yaml
 
+ui:
+	cargo run --bin ui -- -c ./configs/local_ui.yaml
+
+
 rabbit:
 	docker stop rabbitmq || true
 	sleep 1

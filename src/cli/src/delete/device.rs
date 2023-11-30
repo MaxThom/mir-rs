@@ -1,6 +1,6 @@
 use clap::Args;
+use libs::utils::cli::get_stdin_from_pipe;
 use serde_json::{json, Value};
-use y::utils::cli::get_stdin_from_pipe;
 
 #[derive(Args)]
 pub struct DeviceCmd {
