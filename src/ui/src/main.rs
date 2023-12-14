@@ -10,13 +10,13 @@ use libs::utils::logger::setup_logger;
 use serde::Deserialize;
 
 #[derive(Template)]
-#[template(path = "hello.html")]
-struct HelloTemplate<'a> {
+#[template(path = "index.html")]
+struct IndexTemplate<'a> {
     name: &'a str,
 }
 
-async fn hello() -> HelloTemplate<'static> {
-    HelloTemplate { name: "world" }
+async fn index() -> IndexTemplate<'static> {
+    IndexTemplate { name: "world" }
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -49,7 +49,7 @@ async fn main() {
     setup_logger(settings.log_level.clone()).unwrap();
     info!("{:?}", settings);
 
-    let app = Router::new().route("/", get(hello));
+    let app = Router::new().route("/", get(index));
 
     let addr = format!("0.0.0.0:{}", settings.web_srv_port);
 
